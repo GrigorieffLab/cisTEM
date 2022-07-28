@@ -417,6 +417,7 @@ class Image {
     void  ApplyCurveFilterUninterpolated(Curve* filter_to_apply, float resolution_limit = 1.0f, float scale = 0.0f);
     void  MaskCentralCross(int vertical_half_width = 1, int horizontal_half_width = 1);
     void  ZeroCentralPixel( );
+    float ReturnCentralPixelValue( );
     void  CalculateCrossCorrelationImageWith(Image* other_image);
     void  SwapRealSpaceQuadrants( );
     void  ComputeAmplitudeSpectrumFull2D(Image* other_image, bool calculate_phases = false, float phase_multiplier = 1.0f);

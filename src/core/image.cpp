@@ -5834,6 +5834,23 @@ void Image::ZeroCentralPixel( ) {
     }
 }
 
+float Image::ReturnCentralPixelValue( ) {
+    MyDebugAssertTrue(is_in_real_space, "Not in real space");
+
+    int  i, j;
+    long address = 0;
+
+    for ( j = 0; j < logical_y_dimension; j++ ) {
+        for ( i = 0; i < logical_x_dimension; i++ ) {
+            if ( j == physical_address_of_box_center_y && i == physical_address_of_box_center_x ) {
+                return real_values[address];
+            }
+            address++;
+        }
+        address += padding_jump_value;
+    }
+}
+
 void Image::SetMaximumValueOnCentralCross(float maximum_value) {
     MyDebugAssertTrue(is_in_memory, "Memory not allocated");
     MyDebugAssertTrue(is_in_real_space, "Not in real space");
