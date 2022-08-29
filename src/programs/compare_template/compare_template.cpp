@@ -1,7 +1,7 @@
 #include "../../core/core_headers.h"
 
 class
-        CalculateSNRRatioApp : public MyApp {
+        CompareTemplateApp : public MyApp {
 
   public:
     bool DoCalculation( );
@@ -10,11 +10,11 @@ class
   private:
 };
 
-IMPLEMENT_APP(CalculateSNRRatioApp)
+IMPLEMENT_APP(CompareTemplateApp)
 
 // override the DoInteractiveUserInput
 
-void CalculateSNRRatioApp::DoInteractiveUserInput( ) {
+void CompareTemplateApp::DoInteractiveUserInput( ) {
     wxString input_search_images;
     wxString input_reconstruction_1;
     wxString input_reconstruction_2;
@@ -37,7 +37,7 @@ void CalculateSNRRatioApp::DoInteractiveUserInput( ) {
     float    in_plane_angular_step   = 0;
     float    in_plane_angular_step_2 = 0;
 
-    UserInput* my_input = new UserInput("CalculateSNRRatio", 1.00);
+    UserInput* my_input = new UserInput("CompareTemplate", 1.00);
 
     input_search_images     = my_input->GetFilenameFromUser("Input images to be searched", "The input image stack, containing the images that should be searched", "image_stack.mrc", true);
     input_reconstruction_1  = my_input->GetFilenameFromUser("First input template reconstruction", "The 3D reconstruction from which projections are calculated", "reconstruction.mrc", true);
@@ -94,7 +94,7 @@ void CalculateSNRRatioApp::DoInteractiveUserInput( ) {
 
 // override the do calculation method which will be what is actually run..
 
-bool CalculateSNRRatioApp::DoCalculation( ) {
+bool CompareTemplateApp::DoCalculation( ) {
     wxString input_search_images_filename    = my_current_job.arguments[0].ReturnStringArgument( );
     wxString input_reconstruction_1_filename = my_current_job.arguments[1].ReturnStringArgument( );
     wxString input_reconstruction_2_filename = my_current_job.arguments[2].ReturnStringArgument( );
