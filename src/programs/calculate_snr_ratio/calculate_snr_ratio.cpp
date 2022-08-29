@@ -150,12 +150,14 @@ bool CalculateSNRRatioApp::DoCalculation( ) {
     Curve whitening_filter;
     Curve number_of_terms;
 
-    Image           input_reconstruction_1, input_reconstruction_2, current_projection_1, current_projection_2, current_projection_ac;
+    Image           input_reconstruction_1, input_reconstruction_2, current_projection_1, current_projection_2, current_projection_ac, pure_noise, pure_noise_2d;
     ImageFile       input_search_image_file;
     ImageFile       input_reconstruction_1_file, input_reconstruction_2_file;
     Image           input_image;
     EulerSearch     global_euler_search, global_euler_search_2;
     AnglesAndShifts angles_ref, angles_compare;
+
+    NumericTextFile output_file("clean_image_from_1_output.txt", OPEN_TO_WRITE, 3);
 
     //wxString        output_histogram_file = "ccs.txt";
     //NumericTextFile histogram_file(output_histogram_file, OPEN_TO_WRITE, 1);
@@ -255,7 +257,7 @@ bool CalculateSNRRatioApp::DoCalculation( ) {
     // double collected_avg_data[total_correlation_positions];
     //double collected_var_data[total_correlation_positions];
 
-    float cc_val, ac_val, snr_ratio;
+    float cc_val, ac_val, snr_ratio, pure_noise_cc_val;
     bool  is_maximum;
 
     for ( int line_counter = 0; line_counter < total_correlation_positions; line_counter++ ) {
@@ -285,6 +287,10 @@ bool CalculateSNRRatioApp::DoCalculation( ) {
     current_projection_1.Allocate(input_reconstruction_1_file.ReturnXSize( ), input_reconstruction_1_file.ReturnXSize( ), false);
     current_projection_2.Allocate(input_reconstruction_2_file.ReturnXSize( ), input_reconstruction_2_file.ReturnXSize( ), false);
     current_projection_ac.Allocate(input_reconstruction_1_file.ReturnXSize( ), input_reconstruction_1_file.ReturnXSize( ), false);
+    pure_noise.Allocate(input_reconstruction_1_file.ReturnXSize( ), input_reconstruction_1_file.ReturnXSize( ), input_reconstruction_1_file.ReturnXSize( ), true);
+    pure_noise_2d.Allocate(input_reconstruction_1_file.ReturnXSize( ), input_reconstruction_1_file.ReturnXSize( ), false);
+    pure_noise.SetToConstant(0.0f);
+    pure_noise.AddGaussianNoise(5.0f);
 
     input_reconstruction_1.ForwardFFT( );
     input_reconstruction_1.ZeroCentralPixel( );
@@ -293,6 +299,12 @@ bool CalculateSNRRatioApp::DoCalculation( ) {
     input_reconstruction_2.ForwardFFT( );
     input_reconstruction_2.ZeroCentralPixel( );
     input_reconstruction_2.SwapRealSpaceQuadrants( );
+
+    pure_noise.ForwardFFT( );
+    pure_noise.ZeroCentralPixel( );
+    pure_noise.SwapRealSpaceQuadrants( );
+
+    double temp_double_array[2];
 
     // step one: generate N projections from template 2
 
@@ -334,6 +346,26 @@ bool CalculateSNRRatioApp::DoCalculation( ) {
                 for ( current_psi = psi_start; current_psi <= psi_max; current_psi += psi_step ) {
                     angles_ref.Init(global_euler_search.list_of_search_parameters[current_search_position][0], global_euler_search.list_of_search_parameters[current_search_position][1], current_psi, 0.0, 0.0);
                     //TODO: padding; ratio inside of average; get different projection then tm search
+                    pure_noise.ExtractSlice(pure_noise_2d, angles_ref, 1.0f, false);
+                    pure_noise_2d.MultiplyPixelWise(projection_filter);
+                    pure_noise_2d.BackwardFFT( );
+                    pure_noise_2d.AddConstant(-pure_noise_2d.ReturnAverageOfRealValuesOnEdges( ));
+                    pure_noise_2d.AddConstant(-pure_noise_2d.ReturnAverageOfRealValues( ));
+                    variance = pure_noise_2d.ReturnSumOfSquares( ) - powf(pure_noise_2d.ReturnAverageOfRealValues( ), 2);
+                    pure_noise_2d.DivideByConstant(sqrtf(variance));
+                    pure_noise_2d.ForwardFFT( );
+                    pure_noise_2d.ZeroCentralPixel( );
+#ifdef MKL
+                    // Use the MKL
+                    vmcMulByConj(pure_noise_2d.real_memory_allocated / 2, reinterpret_cast<MKL_Complex8*>(current_projection_2.complex_values), reinterpret_cast<MKL_Complex8*>(pure_noise_2d.complex_values), reinterpret_cast<MKL_Complex8*>(pure_noise_2d.complex_values), VML_EP | VML_FTZDAZ_ON | VML_ERRMODE_IGNORE);
+#else
+                    for ( pixel_counter = 0; pixel_counter < pure_noise_2d.real_memory_allocated / 2; pixel_counter++ ) {
+                        pure_noise_2d.complex_values[pixel_counter] = conj(pure_noise_2d.complex_values[pixel_counter]) * current_projection_2.complex_values[pixel_counter];
+                    }
+#endif
+                    pure_noise_2d.SwapRealSpaceQuadrants( );
+                    pure_noise_2d.BackwardFFT( );
+                    pure_noise_cc_val = pure_noise_2d.ReturnCentralPixelValue( ); // t2*n
 
                     input_reconstruction_1.ExtractSlice(current_projection_1, angles_ref, 1.0f, false);
                     //current_projection_1.SwapRealSpaceQuadrants( );
@@ -343,7 +375,7 @@ bool CalculateSNRRatioApp::DoCalculation( ) {
                     current_projection_1.AddConstant(-current_projection_1.ReturnAverageOfRealValues( ));
                     variance = current_projection_1.ReturnSumOfSquares( ) - powf(current_projection_1.ReturnAverageOfRealValues( ), 2);
                     current_projection_1.DivideByConstant(sqrtf(variance));
-                    //current_projection_1.AddGaussianNoise(10.0f);
+                    //current_projection_1.AddGaussianNoise(5.0f);
                     current_projection_1.ForwardFFT( );
                     // Zeroing the central pixel is probably not doing anything useful...
                     current_projection_1.ZeroCentralPixel( );
@@ -358,6 +390,8 @@ bool CalculateSNRRatioApp::DoCalculation( ) {
                     current_projection_1.SwapRealSpaceQuadrants( );
                     current_projection_1.BackwardFFT( );
                     cc_val = current_projection_1.ReturnCentralPixelValue( );
+                    wxPrintf("test commutative of cc: %f\n", cc_val);
+                    exit(0);
 
                     input_reconstruction_1.ExtractSlice(current_projection_1, angles_ref, 1.0f, false);
                     //current_projection_1.SwapRealSpaceQuadrants( );
@@ -367,7 +401,7 @@ bool CalculateSNRRatioApp::DoCalculation( ) {
                     current_projection_1.AddConstant(-current_projection_1.ReturnAverageOfRealValues( ));
                     variance = current_projection_1.ReturnSumOfSquares( ) - powf(current_projection_1.ReturnAverageOfRealValues( ), 2);
                     current_projection_1.DivideByConstant(sqrtf(variance));
-                    //current_projection_1.AddGaussianNoise(10.0f);
+                    //current_projection_1.AddGaussianNoise(1.0f);
                     current_projection_1.ForwardFFT( );
                     // Zeroing the central pixel is probably not doing anything useful...
                     current_projection_1.ZeroCentralPixel( );
@@ -382,6 +416,10 @@ bool CalculateSNRRatioApp::DoCalculation( ) {
                     current_projection_1.SwapRealSpaceQuadrants( );
                     current_projection_1.BackwardFFT( );
                     ac_val = current_projection_1.ReturnCentralPixelValue( );
+
+                    temp_double_array[0] = pure_noise_cc_val;
+                    temp_double_array[1] = cc_val;
+                    output_file.WriteLine(temp_double_array);
 
                     if ( ac_val > collected_ac_data[view_counter] ) {
                         collected_ac_data[view_counter]            = ac_val;
@@ -399,6 +437,7 @@ bool CalculateSNRRatioApp::DoCalculation( ) {
             //wxPrintf("one projection ends...\n"); // finish M views for each one of N projections
         }
     }
+    output_file.Close( );
     for ( int line_counter = 0; line_counter < total_correlation_positions; line_counter++ ) {
         collected_ac_sum_data[line_counter] /= total_correlation_positions_2;
         collected_cc_sum_data[line_counter] /= total_correlation_positions_2;
@@ -426,6 +465,7 @@ bool CalculateSNRRatioApp::DoCalculation( ) {
         scaled_snr_single_view = scaled_ac_single_view / scaled_cc_single_view;
         snr_multi_views_sum_scaled += scaled_snr_single_view;
         snr_multi_views_sum_of_squares_scaled += powf(scaled_snr_single_view, 2);
+        wxPrintf("view %i AC mean = %lf CC mean = %lf\n", line_counter, collected_ac_sum_data[line_counter], collected_cc_sum_data[line_counter]);
     }
 
     wxPrintf("Avg of multiview aligned AC/CC %f\n", snr_multi_views_sum_unscaled / total_correlation_positions);
