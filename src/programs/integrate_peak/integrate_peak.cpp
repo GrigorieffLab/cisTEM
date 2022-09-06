@@ -1,4 +1,8 @@
 #include "../../core/core_headers.h"
+#include <iostream>
+#include <iomanip>
+
+using namespace Eigen;
 
 class
         IntegratePeakApp : public MyApp {
@@ -101,6 +105,10 @@ IMPLEMENT_APP(IntegratePeakApp)
 void IntegratePeakApp::DoInteractiveUserInput( ) {
     wxString scaled_mip_input_filename;
     wxString scaled_mip_output_filename;
+    wxString best_psi_input_filename;
+    wxString best_theta_input_filename;
+    wxString best_phi_input_filename;
+    wxString input_reconstruction_filename;
 
     float pixel_size              = 1.0f;
     float voltage_kV              = 300.0f;
@@ -138,10 +146,13 @@ void IntegratePeakApp::DoInteractiveUserInput( ) {
 
     UserInput* my_input = new UserInput("IntegratePeak", 1.00);
 
-    scaled_mip_input_filename  = my_input->GetFilenameFromUser("Input scaled MIP file", "The file with the scaled MIP (peak search done on this image)", "scaled_mip.mrc", false);
-    scaled_mip_output_filename = my_input->GetFilenameFromUser("Output scaled MIP file", "The file with the scaled MIP (recalculated using binning)", "output_scaled_mip.mrc", false);
-    wanted_threshold           = my_input->GetFloatFromUser("Peak threshold", "Peaks over this size will be taken", "7.5", 0.0);
-    min_peak_radius            = my_input->GetFloatFromUser("Min peak radius (px.)", "Essentially the minimum closeness for peaks", "10.0", 0.0);
+    scaled_mip_input_filename     = my_input->GetFilenameFromUser("Input scaled MIP file", "The file with the scaled MIP (peak search done on this image)", "scaled_mip.mrc", true);
+    best_psi_input_filename       = my_input->GetFilenameFromUser("Input psi file", "The file with the best psi image", "psi.mrc", true);
+    best_theta_input_filename     = my_input->GetFilenameFromUser("Input theta file", "The file with the best psi image", "theta.mrc", true);
+    best_phi_input_filename       = my_input->GetFilenameFromUser("Input phi file", "The file with the best psi image", "phi.mrc", true);
+    input_reconstruction_filename = my_input->GetFilenameFromUser("Template file", "XXX", "output_scaled_mip.mrc", true);
+    wanted_threshold              = my_input->GetFloatFromUser("Peak threshold", "Peaks over this size will be taken", "7.5", 0.0);
+    min_peak_radius               = my_input->GetFloatFromUser("Min peak radius (px.)", "Essentially the minimum closeness for peaks", "10.0", 0.0);
     // TODO: min peak radius not useful
     pixel_size    = my_input->GetFloatFromUser("Pixel size of images (A)", "Pixel size of input images in Angstroms", "1.0", 0.0);
     padding       = my_input->GetFloatFromUser("Padding factor", "Factor determining how much the input volume is padded to improve projections", "2.0", 1.0);
@@ -162,9 +173,12 @@ void IntegratePeakApp::DoInteractiveUserInput( ) {
     delete my_input;
 
     //	my_current_job.Reset(42);
-    my_current_job.ManualSetArguments("ttffffftiii",
+    my_current_job.ManualSetArguments("tttttffffftiii",
                                       scaled_mip_input_filename.ToUTF8( ).data( ),
-                                      scaled_mip_output_filename.ToUTF8( ).data( ),
+                                      best_phi_input_filename.ToUTF8( ).data( ),
+                                      best_theta_input_filename.ToUTF8( ).data( ),
+                                      best_psi_input_filename.ToUTF8( ).data( ),
+                                      input_reconstruction_filename.ToUTF8( ).data( ),
                                       pixel_size,
                                       padding,
                                       mask_radius,
@@ -179,18 +193,42 @@ void IntegratePeakApp::DoInteractiveUserInput( ) {
 // override the do calculation method which will be what is actually run..
 
 bool IntegratePeakApp::DoCalculation( ) {
-    wxDateTime start_time                 = wxDateTime::Now( );
-    wxString   scaled_mip_input_filename  = my_current_job.arguments[0].ReturnStringArgument( );
-    wxString   scaled_mip_output_filename = my_current_job.arguments[1].ReturnStringArgument( );
-    float      pixel_size                 = my_current_job.arguments[2].ReturnFloatArgument( );
-    float      padding                    = my_current_job.arguments[3].ReturnFloatArgument( );
-    float      mask_radius                = my_current_job.arguments[4].ReturnFloatArgument( );
-    float      wanted_threshold           = my_current_job.arguments[5].ReturnFloatArgument( );
-    float      min_peak_radius            = my_current_job.arguments[6].ReturnFloatArgument( );
-    wxString   my_symmetry                = my_current_job.arguments[7].ReturnStringArgument( );
-    int        result_number              = my_current_job.arguments[8].ReturnIntegerArgument( );
-    int        max_threads                = my_current_job.arguments[9].ReturnIntegerArgument( );
-    int        box_size                   = my_current_job.arguments[10].ReturnIntegerArgument( );
+    wxDateTime start_time                    = wxDateTime::Now( );
+    wxString   scaled_mip_input_filename     = my_current_job.arguments[0].ReturnStringArgument( );
+    wxString   best_phi_input_filename       = my_current_job.arguments[1].ReturnStringArgument( );
+    wxString   best_theta_input_filename     = my_current_job.arguments[2].ReturnStringArgument( );
+    wxString   best_psi_input_filename       = my_current_job.arguments[3].ReturnStringArgument( );
+    wxString   input_reconstruction_filename = my_current_job.arguments[4].ReturnStringArgument( );
+    float      pixel_size                    = my_current_job.arguments[5].ReturnFloatArgument( );
+    float      padding                       = my_current_job.arguments[6].ReturnFloatArgument( );
+    float      mask_radius                   = my_current_job.arguments[7].ReturnFloatArgument( );
+    float      wanted_threshold              = my_current_job.arguments[8].ReturnFloatArgument( );
+    float      min_peak_radius               = my_current_job.arguments[9].ReturnFloatArgument( );
+    wxString   my_symmetry                   = my_current_job.arguments[10].ReturnStringArgument( );
+    int        result_number                 = my_current_job.arguments[11].ReturnIntegerArgument( );
+    int        max_threads                   = my_current_job.arguments[12].ReturnIntegerArgument( );
+    int        box_size                      = my_current_job.arguments[13].ReturnIntegerArgument( );
+    /*
+    Eigen::MatrixXd m(2, 2);
+    m(0, 0) = 3;
+    m(1, 0) = 2.5;
+    m(0, 1) = -1;
+    m(1, 1) = m(1, 0) + m(0, 1);
+    wxPrintf("m=%lf\n", m(0, 0));
+    // std::cout << "debug" << std::endl; TODO: ask why std not printing
+    */
+
+    //float              rot = deg_2_rad(130.0f), tilt = deg_2_rad(30.0f), psi = deg_2_rad(199.5f);
+    //Eigen::Quaternionf q1;
+    //Eigen::Quaternionf q2;
+    //q1 = Eigen::AngleAxisf(rot, Eigen::Vector3f::UnitZ( )) * Eigen::AngleAxisf(tilt, Eigen::Vector3f::UnitY( )) * Eigen::AngleAxisf(psi, Eigen::Vector3f::UnitZ( ));
+    //float distance = acosf(q1.coeffs( )[0] * q2.coeffs( )[0] + q1.coeffs( )[1] * q2.coeffs( )[1] + q1.coeffs( )[2] * q2.coeffs( )[2] + q1.coeffs( )[3] * q2.coeffs( )[3]);
+    //wxPrintf("distance = %f degrees\n", rad_2_deg(distance));
+    // cisTEM is using ZYZ https://www.ccpem.ac.uk/user_help/rotation_conventions.php
+
+    // now that I can convert between euler and quaternion
+
+    // calculate the "variance" of rotational/angular distribution (is match_template uniformaly sampling or not?) by calculating the distance between rotations of pixel pairs: dSO(3)(q1,q2)=2*cos^(-1)(|q1*q2|) see paper: XXX TODO XXX
 
     if ( is_running_locally == false ) {
         max_threads = number_of_threads_requested_on_command_line; // OVERRIDE FOR THE GUI, AS IT HAS TO BE SET ON THE COMMAND LINE...
@@ -199,7 +237,8 @@ bool IntegratePeakApp::DoCalculation( ) {
     int i, j;
 
     long  thread_pixel_counter = 0;
-    long  pixel_counter        = 0;
+    long  pixel_counter_1      = 0;
+    long  pixel_counter_2      = 0;
     float sq_dist_x, sq_dist_y;
     long  address;
     long  best_address;
@@ -207,23 +246,35 @@ bool IntegratePeakApp::DoCalculation( ) {
     int current_x;
     int current_y;
 
-    AnglesAndShifts          angles;
     TemplateComparisonObject template_object;
 
     ImageFile scaled_mip_input_file;
     ImageFile input_reconstruction_file;
+    ImageFile best_psi_input_file;
+    ImageFile best_theta_input_file;
+    ImageFile best_phi_input_file;
 
     scaled_mip_input_file.OpenFile(scaled_mip_input_filename.ToStdString( ), false);
-
+    best_psi_input_file.OpenFile(best_psi_input_filename.ToStdString( ), false);
+    best_theta_input_file.OpenFile(best_theta_input_filename.ToStdString( ), false);
+    best_phi_input_file.OpenFile(best_phi_input_filename.ToStdString( ), false);
+    input_reconstruction_file.OpenFile(input_reconstruction_filename.ToStdString( ), false);
     Image input_image;
-    Image windowed_particle;
     Image scaled_mip_for_peak_extraction;
+    Image psi_for_peak_extraction;
+    Image theta_for_peak_extraction;
+    Image phi_for_peak_extraction;
     Image scaled_mip_unmasked;
     Image extracted_scaled_mip_patch;
-    Image scaled_mip_recalculated;
+    Image extracted_psi_patch;
+    Image extracted_theta_patch;
+    Image extracted_phi_patch;
     Image best_scaled_mip;
 
     Image scaled_mip_image;
+    Image psi_image;
+    Image theta_image;
+    Image phi_image;
     Peak  current_peak;
     Peak  template_peak;
     Peak  best_peak;
@@ -237,15 +288,16 @@ bool IntegratePeakApp::DoCalculation( ) {
     int   peak_number;
     float mask_falloff     = 20.0;
     float min_peak_radius2 = powf(min_peak_radius, 2);
-
-    int jj, ii;
-
+    int   jj, ii;
     scaled_mip_image.ReadSlice(&scaled_mip_input_file, result_number);
+    psi_image.ReadSlice(&best_psi_input_file, result_number);
+    theta_image.ReadSlice(&best_theta_input_file, result_number);
+    phi_image.ReadSlice(&best_phi_input_file, result_number);
 
     scaled_mip_for_peak_extraction.Allocate(scaled_mip_image.logical_x_dimension, scaled_mip_image.logical_y_dimension, 1);
-    scaled_mip_recalculated.Allocate(scaled_mip_image.logical_x_dimension, scaled_mip_image.logical_y_dimension, 1);
-
-    scaled_mip_recalculated.SetToConstant(0.0f);
+    psi_for_peak_extraction.Allocate(psi_image.logical_x_dimension, psi_image.logical_y_dimension, 1);
+    theta_for_peak_extraction.Allocate(theta_image.logical_x_dimension, theta_image.logical_y_dimension, 1);
+    phi_for_peak_extraction.Allocate(phi_image.logical_x_dimension, phi_image.logical_y_dimension, 1);
 
     // allocate windowed particle with user input box size
 
@@ -259,6 +311,9 @@ bool IntegratePeakApp::DoCalculation( ) {
     scaled_mip_unmasked.CopyFrom(&scaled_mip_image);
     current_peak.value = FLT_MAX;
     float snr_recalculated;
+
+    float              old_snr_value, phi_1, theta_1, psi_1, phi_2, theta_2, psi_2;
+    Eigen::Quaternionf q1, q2;
 
     //test
     // wxPrintf("real_space pixel: %ld\n", best_scaled_mip.real_memory_allocated); // TODO what is difference between real memory and number of real pixels
@@ -316,14 +371,27 @@ bool IntegratePeakApp::DoCalculation( ) {
         wxPrintf("Peak %4i at x, y =  %12.6f, %12.6f : %10.6f\n", number_of_peaks_found, current_peak.x * pixel_size, current_peak.y * pixel_size, current_peak.value);
     }
 
+    // distance array
+    int length_of_distance_array = 0;
+    for ( pixel_counter_1 = 0; pixel_counter_1 < box_size * box_size; pixel_counter_1++ ) {
+        for ( pixel_counter_2 = pixel_counter_1 + 1; pixel_counter_2 < box_size * box_size; pixel_counter_2++ ) {
+            length_of_distance_array++;
+        }
+    }
+    wxPrintf("length_of_distance_array = %i\n", length_of_distance_array);
+    double sum_distance, sum_of_squares_distance, variance, distance;
+
     //TODO: optimize workflow using openMP
     // TODO: could the result be modeled using GEV?
-    float old_snr_value;
-#pragma omp parallel num_threads(max_threads) default(none) shared(number_of_peaks_found, found_peaks, scaled_mip_output_filename, box_size, best_scaled_mip, scaled_mip_unmasked, scaled_mip_recalculated, max_threads) private(sq_dist_y, sq_dist_x, scaled_mip_for_peak_extraction, distance_from_origin, i, j, ii, jj, current_peak, extracted_scaled_mip_patch, snr_recalculated, old_snr_value, thread_pixel_counter)
+
+#pragma omp parallel num_threads(max_threads) default(none) shared(pixel_size, length_of_distance_array, number_of_peaks_found, found_peaks, box_size, scaled_mip_unmasked, psi_image, theta_image, phi_image, max_threads) private(peak_number, scaled_mip_for_peak_extraction, psi_for_peak_extraction, theta_for_peak_extraction, phi_for_peak_extraction, current_peak, extracted_scaled_mip_patch, extracted_psi_patch, extracted_theta_patch, extracted_phi_patch, snr_recalculated, q1, q2, pixel_counter_1, pixel_counter_2, phi_1, theta_1, psi_1, phi_2, theta_2, psi_2, sum_distance, sum_of_squares_distance, variance, distance)
     {
         current_peak.value = FLT_MAX;
         extracted_scaled_mip_patch.Allocate(box_size, box_size, true);
-//	while (current_peak.value >= wanted_threshold)
+        extracted_psi_patch.Allocate(box_size, box_size, true);
+        extracted_theta_patch.Allocate(box_size, box_size, true);
+        extracted_phi_patch.Allocate(box_size, box_size, true);
+
 #pragma omp for schedule(dynamic, 1)
         for ( peak_number = 0; peak_number < number_of_peaks_found; peak_number++ ) {
             current_peak = found_peaks[peak_number];
@@ -333,64 +401,55 @@ bool IntegratePeakApp::DoCalculation( ) {
             scaled_mip_for_peak_extraction.RealSpaceIntegerShift(current_peak.x, current_peak.y);
             scaled_mip_for_peak_extraction.ClipInto(&extracted_scaled_mip_patch);
 
+            psi_for_peak_extraction.CopyFrom(&psi_image);
+            psi_for_peak_extraction.RealSpaceIntegerShift(current_peak.x, current_peak.y);
+            psi_for_peak_extraction.ClipInto(&extracted_psi_patch);
+
+            theta_for_peak_extraction.CopyFrom(&theta_image);
+            theta_for_peak_extraction.RealSpaceIntegerShift(current_peak.x, current_peak.y);
+            theta_for_peak_extraction.ClipInto(&extracted_theta_patch);
+
+            phi_for_peak_extraction.CopyFrom(&phi_image);
+            phi_for_peak_extraction.RealSpaceIntegerShift(current_peak.x, current_peak.y);
+            phi_for_peak_extraction.ClipInto(&extracted_phi_patch);
+
+            extracted_scaled_mip_patch.QuickAndDirtyWriteSlice("extracted_scaled_mip.mrc", 1);
+            psi_for_peak_extraction.QuickAndDirtyWriteSlice("psi_for_peak_extraction.mrc", 1);
+
             snr_recalculated = extracted_scaled_mip_patch.ReturnSumOfRealValues( );
-        }
 
-        for ( j = 0; j < best_scaled_mip.logical_y_dimension; j++ ) {
-            sq_dist_y = powf(j - best_scaled_mip.physical_address_of_box_center_y, 2);
+            sum_distance            = 0.0;
+            sum_of_squares_distance = 0.0;
 
-            for ( i = 0; i < best_scaled_mip.logical_x_dimension; i++ ) {
-                sq_dist_x = powf(i - best_scaled_mip.physical_address_of_box_center_x, 2);
+            // calculate variance of distance between pairwise rotations
+            for ( pixel_counter_1 = 0; pixel_counter_1 < extracted_phi_patch.number_of_real_space_pixels; pixel_counter_1++ ) {
+                for ( pixel_counter_2 = pixel_counter_1 + 1; pixel_counter_2 < extracted_phi_patch.number_of_real_space_pixels; pixel_counter_2++ ) {
+                    phi_1   = extracted_phi_patch.real_values[pixel_counter_1];
+                    theta_1 = extracted_theta_patch.real_values[pixel_counter_1];
+                    psi_1   = extracted_psi_patch.real_values[pixel_counter_1];
+                    phi_2   = extracted_phi_patch.real_values[pixel_counter_2];
+                    theta_2 = extracted_theta_patch.real_values[pixel_counter_2];
+                    psi_2   = extracted_psi_patch.real_values[pixel_counter_2];
+                    q1      = Eigen::AngleAxisf(phi_1, Eigen::Vector3f::UnitZ( )) * Eigen::AngleAxisf(theta_1, Eigen::Vector3f::UnitY( )) * Eigen::AngleAxisf(psi_1, Eigen::Vector3f::UnitZ( ));
+                    q2      = Eigen::AngleAxisf(phi_2, Eigen::Vector3f::UnitZ( )) * Eigen::AngleAxisf(theta_2, Eigen::Vector3f::UnitY( )) * Eigen::AngleAxisf(psi_2, Eigen::Vector3f::UnitZ( ));
+                    // calculate the "variance" of rotational/angular distribution (is match_template uniformaly sampling or not?) by calculating the distance between rotations of pixel pairs: dSO(3)(q1,q2)=2*cos^(-1)(|q1*q2|) note that I am neglecting factor 2 here. see paper: XXX TODO XXX
 
-                distance_from_origin = sq_dist_x + sq_dist_y;
+                    distance = q1.coeffs( )[0] * q2.coeffs( )[0] + q1.coeffs( )[1] * q2.coeffs( )[1] + q1.coeffs( )[2] * q2.coeffs( )[2] + q1.coeffs( )[3] * q2.coeffs( )[3];
 
-                // recalculate pixel location (redundant but for OMP threads)
-                thread_pixel_counter = 0;
-                for ( jj = 0; jj < best_scaled_mip.logical_y_dimension; jj++ ) {
-                    for ( ii = 0; ii < best_scaled_mip.logical_x_dimension; ii++ ) {
-                        if ( jj == j && ii == i ) {
-                            goto COUNTEREND;
-                        }
-                        thread_pixel_counter++;
+                    if ( fabs(distance - 1.0) < 10E-6 ) {
+                        distance = 1.0;
                     }
-                    thread_pixel_counter += best_scaled_mip.padding_jump_value;
+                    sum_distance += rad_2_deg(acos(distance));
+                    sum_of_squares_distance += pow(rad_2_deg(acos(distance)), 2);
                 }
-
-            COUNTEREND:
-                //  create peak using location
-                current_peak = CreatePeakFromScaledMip(best_scaled_mip, thread_pixel_counter, distance_from_origin, i, j);
-
-                // now that we have a peak...
-                // extract patch
-                extracted_scaled_mip_patch.Allocate(box_size, box_size, true);
-                scaled_mip_for_peak_extraction.CopyFrom(&scaled_mip_unmasked); // TODO: is scaled_mip_unmasked necessary?
-                scaled_mip_for_peak_extraction.RealSpaceIntegerShift(current_peak.x, current_peak.y);
-                scaled_mip_for_peak_extraction.ClipInto(&extracted_scaled_mip_patch);
-                // wxPrintf("snr before binning %f\n", extracted_scaled_mip_patch.ReturnCentralPixelValue( ));
-                // do real space binning on extracted scaled_mip patch
-                // extracted_scaled_mip_patch.RealSpaceBinning(binning_factor, binning_factor);
-
-                // calculate the new SNR value for this pixel
-                snr_recalculated = extracted_scaled_mip_patch.ReturnSumOfRealValues( );
-                // wxPrintf("snr after binning %f\n", snr_recalculated);
-
-                // mask out pixel in best_scaled_mip
-                // TODO: criticle or together
-                //old_snr_value                                     = best_scaled_mip.real_values[thread_pixel_counter];
-                best_scaled_mip.real_values[thread_pixel_counter] = -FLT_MAX;
-
-                // fill in new scaled mip with recalculated SNR values
-                // TODO: criticle or together
-                scaled_mip_recalculated.real_values[thread_pixel_counter] = snr_recalculated;
-                //wxPrintf("old/new snr value: %f/%f\n", old_snr_value, snr_recalculated);
             }
-            //#pragma omp critical
+            variance = sum_of_squares_distance / length_of_distance_array - pow(sum_distance / length_of_distance_array, 2);
+            wxPrintf("Peak %4i at x, y =  %12.6f, %12.6f : %10.6f -> snr sum %10.6lf -> snr sum / SD(rotation) %10.6lf\n", peak_number, (current_peak.x + scaled_mip_unmasked.physical_address_of_box_center_x) * pixel_size, (current_peak.y + scaled_mip_unmasked.physical_address_of_box_center_y) * pixel_size, current_peak.value, snr_recalculated, snr_recalculated / sqrt(variance));
         }
 
     } // end omp section
 
-    scaled_mip_recalculated.QuickAndDirtyWriteSlice(scaled_mip_output_filename.ToStdString( ), 1);
-    //	delete [] addresses;
+    delete[] found_peaks;
 
     if ( is_running_locally == true ) {
         wxPrintf("\nRefine Template: Normal termination\n");

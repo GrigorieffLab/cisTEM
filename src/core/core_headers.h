@@ -166,6 +166,8 @@ class StackDump : public wxStackWalker // so we can give backtraces..
 #include "json/jsonval.h"
 #include "stopwatch.h"
 #include "ccl3d.h"
+#include "eigen/Eigen/Geometry"
+#include "eigen/Eigen/Dense"
 
 #ifdef EXPERIMENTAL
 #include "../../include/ieee-754-half/half.hpp"
