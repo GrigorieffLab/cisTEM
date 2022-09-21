@@ -237,8 +237,8 @@ bool IntegratePeakApp::DoCalculation( ) {
     int i, j;
 
     long  thread_pixel_counter = 0;
-    long  pixel_counter_1      = 0;
-    long  pixel_counter_2      = 0;
+    int   pixel_counter_1      = 0;
+    int   pixel_counter_2      = 0;
     float sq_dist_x, sq_dist_y;
     long  address;
     long  best_address;
@@ -294,6 +294,36 @@ bool IntegratePeakApp::DoCalculation( ) {
     theta_image.ReadSlice(&best_theta_input_file, result_number);
     phi_image.ReadSlice(&best_phi_input_file, result_number);
 
+    /*
+    float              pixel_1_phi, pixel_1_theta, pixel_1_psi, pixel_2_phi, pixel_2_theta, pixel_2_psi;
+    Eigen::Quaternionf pixel_1_q, pixel_2_q;
+    float              pairwise_distance;
+    NumericTextFile    similarity_file("similarity_peak.txt", OPEN_TO_WRITE, 1);
+
+    for ( pixel_counter_1 = 0; pixel_counter_1 < psi_image.number_of_real_space_pixels; pixel_counter_1++ ) {
+        for ( pixel_counter_2 = pixel_counter_1 + 1; pixel_counter_2 < psi_image.number_of_real_space_pixels; pixel_counter_2++ ) {
+            pixel_1_phi   = phi_image.real_values[pixel_counter_1];
+            pixel_1_theta = theta_image.real_values[pixel_counter_1];
+            pixel_1_psi   = psi_image.real_values[pixel_counter_1];
+            pixel_2_phi   = phi_image.real_values[pixel_counter_2];
+            pixel_2_theta = theta_image.real_values[pixel_counter_2];
+            pixel_2_psi   = psi_image.real_values[pixel_counter_2];
+            pixel_1_q     = Eigen::AngleAxisf(pixel_1_phi, Eigen::Vector3f::UnitZ( )) * Eigen::AngleAxisf(pixel_1_theta, Eigen::Vector3f::UnitY( )) * Eigen::AngleAxisf(pixel_1_psi, Eigen::Vector3f::UnitZ( ));
+            pixel_2_q     = Eigen::AngleAxisf(pixel_2_phi, Eigen::Vector3f::UnitZ( )) * Eigen::AngleAxisf(pixel_2_theta, Eigen::Vector3f::UnitY( )) * Eigen::AngleAxisf(pixel_2_psi, Eigen::Vector3f::UnitZ( ));
+            // calculate the "variance" of rotational/angular distribution (is match_template uniformaly sampling or not?) by calculating the distance between rotations of pixel pairs: dSO(3)(q1,q2)=2*cos^(-1)(|q1*q2|) note that I am neglecting factor 2 here. see paper: XXX TODO XXX
+
+            pairwise_distance = pixel_1_q.coeffs( )[0] * pixel_2_q.coeffs( )[0] + pixel_1_q.coeffs( )[1] * pixel_2_q.coeffs( )[1] + pixel_1_q.coeffs( )[2] * pixel_2_q.coeffs( )[2] + pixel_1_q.coeffs( )[3] * pixel_2_q.coeffs( )[3];
+            //wxPrintf("%f %f %f %f vs. %f %f %f %f= %f\n", q1.coeffs( )[0], q1.coeffs( )[1], q1.coeffs( )[2], q1.coeffs( )[3], q2.coeffs( )[0], q2.coeffs( )[1], q2.coeffs( )[2], q2.coeffs( )[3], distance);
+
+            if ( fabs(pairwise_distance - 1.0) < 10E-6 ) {
+                pairwise_distance = 1.0;
+            }
+            similarity_file.WriteCommentLine("%i %f %f %f %i %f %f %f %f\n", pixel_counter_1, pixel_1_phi, pixel_1_theta, pixel_1_psi, pixel_counter_2, pixel_2_phi, pixel_2_theta, pixel_2_psi, rad_2_deg(acosf(pairwise_distance)));
+        }
+    }
+    similarity_file.Close( );
+    exit(0);
+*/
     scaled_mip_for_peak_extraction.Allocate(scaled_mip_image.logical_x_dimension, scaled_mip_image.logical_y_dimension, 1);
     psi_for_peak_extraction.Allocate(psi_image.logical_x_dimension, psi_image.logical_y_dimension, 1);
     theta_for_peak_extraction.Allocate(theta_image.logical_x_dimension, theta_image.logical_y_dimension, 1);
@@ -379,7 +409,7 @@ bool IntegratePeakApp::DoCalculation( ) {
         }
     }
     wxPrintf("length_of_distance_array = %i\n", length_of_distance_array);
-    double sum_distance, sum_of_squares_distance, variance, distance;
+    float sum_distance, sum_of_squares_distance, variance, distance;
 
     //TODO: optimize workflow using openMP
     // TODO: could the result be modeled using GEV?
@@ -413,9 +443,6 @@ bool IntegratePeakApp::DoCalculation( ) {
             phi_for_peak_extraction.RealSpaceIntegerShift(current_peak.x, current_peak.y);
             phi_for_peak_extraction.ClipInto(&extracted_phi_patch);
 
-            extracted_scaled_mip_patch.QuickAndDirtyWriteSlice("extracted_scaled_mip.mrc", 1);
-            psi_for_peak_extraction.QuickAndDirtyWriteSlice("psi_for_peak_extraction.mrc", 1);
-
             snr_recalculated = extracted_scaled_mip_patch.ReturnSumOfRealValues( );
 
             sum_distance            = 0.0;
@@ -430,21 +457,24 @@ bool IntegratePeakApp::DoCalculation( ) {
                     phi_2   = extracted_phi_patch.real_values[pixel_counter_2];
                     theta_2 = extracted_theta_patch.real_values[pixel_counter_2];
                     psi_2   = extracted_psi_patch.real_values[pixel_counter_2];
-                    q1      = Eigen::AngleAxisf(phi_1, Eigen::Vector3f::UnitZ( )) * Eigen::AngleAxisf(theta_1, Eigen::Vector3f::UnitY( )) * Eigen::AngleAxisf(psi_1, Eigen::Vector3f::UnitZ( ));
-                    q2      = Eigen::AngleAxisf(phi_2, Eigen::Vector3f::UnitZ( )) * Eigen::AngleAxisf(theta_2, Eigen::Vector3f::UnitY( )) * Eigen::AngleAxisf(psi_2, Eigen::Vector3f::UnitZ( ));
+                    q1      = Eigen::AngleAxisf(deg_2_rad(phi_1), Eigen::Vector3f::UnitZ( )) * Eigen::AngleAxisf(deg_2_rad(theta_1), Eigen::Vector3f::UnitY( )) * Eigen::AngleAxisf(deg_2_rad(psi_1), Eigen::Vector3f::UnitZ( ));
+                    q2      = Eigen::AngleAxisf(deg_2_rad(phi_2), Eigen::Vector3f::UnitZ( )) * Eigen::AngleAxisf(deg_2_rad(theta_2), Eigen::Vector3f::UnitY( )) * Eigen::AngleAxisf(deg_2_rad(psi_2), Eigen::Vector3f::UnitZ( ));
                     // calculate the "variance" of rotational/angular distribution (is match_template uniformaly sampling or not?) by calculating the distance between rotations of pixel pairs: dSO(3)(q1,q2)=2*cos^(-1)(|q1*q2|) note that I am neglecting factor 2 here. see paper: XXX TODO XXX
 
                     distance = q1.coeffs( )[0] * q2.coeffs( )[0] + q1.coeffs( )[1] * q2.coeffs( )[1] + q1.coeffs( )[2] * q2.coeffs( )[2] + q1.coeffs( )[3] * q2.coeffs( )[3];
+                    //wxPrintf("%f %f %f vs. %f %f %f\n", phi_1, theta_1, psi_1, phi_2, theta_2, psi_2);
+                    //wxPrintf("%f %f %f %f vs. %f %f %f %f= %f\n", q1.coeffs( )[0], q1.coeffs( )[1], q1.coeffs( )[2], q1.coeffs( )[3], q2.coeffs( )[0], q2.coeffs( )[1], q2.coeffs( )[2], q2.coeffs( )[3], distance);
 
                     if ( fabs(distance - 1.0) < 10E-6 ) {
                         distance = 1.0;
                     }
-                    sum_distance += rad_2_deg(acos(distance));
-                    sum_of_squares_distance += pow(rad_2_deg(acos(distance)), 2);
+                    sum_distance += rad_2_deg(acosf(distance));
+                    sum_of_squares_distance += powf(distance, 2);
                 }
             }
-            variance = sum_of_squares_distance / length_of_distance_array - pow(sum_distance / length_of_distance_array, 2);
-            wxPrintf("Peak %4i at x, y =  %12.6f, %12.6f : %10.6f -> snr sum %10.6lf -> snr sum / SD(rotation) %10.6lf\n", peak_number, (current_peak.x + scaled_mip_unmasked.physical_address_of_box_center_x) * pixel_size, (current_peak.y + scaled_mip_unmasked.physical_address_of_box_center_y) * pixel_size, current_peak.value, snr_recalculated, snr_recalculated / sqrt(variance));
+            //variance = sum_of_squares_distance / length_of_distance_array - pow(sum_distance / length_of_distance_array, 2);
+            sum_distance /= length_of_distance_array;
+            wxPrintf("Peak %4i at x, y, snr_sum, mean_acos_deg, snr_sum/mean_acos_deg =  %12.6f, %12.6f, %10.6f, %10.6f, %10.6lf, %10.6f\n", peak_number, (current_peak.x + scaled_mip_unmasked.physical_address_of_box_center_x) * pixel_size, (current_peak.y + scaled_mip_unmasked.physical_address_of_box_center_y) * pixel_size, current_peak.value, snr_recalculated, sum_distance, snr_recalculated / sum_distance);
         }
 
     } // end omp section
