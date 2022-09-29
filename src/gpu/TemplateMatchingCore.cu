@@ -2,8 +2,8 @@
 
 #define DO_HISTOGRAM true
 
-__global__ void MipPixelWiseKernel(__half* correlation_output, __half2* my_peaks, const int numel,
-                                   __half psi, __half theta, __half phi, __half2* my_stats, __half2* my_new_peaks);
+__global__ void MipPixelWiseKernel(__half* correlation_output, __half2* my_peaks, __half2* my_top_K_peaks, const int numel,
+                                   __half psi, __half theta, __half phi, __half2* my_stats, __half2* my_new_peaks, const int K);
 
 TemplateMatchingCore::TemplateMatchingCore( ){
 
@@ -55,14 +55,16 @@ void TemplateMatchingCore::Init(MyApp*           parent_pointer,
                                 int              last_search_position,
                                 ProgressBar*     my_progress,
                                 long             total_correlation_positions,
-                                bool             is_running_locally)
+                                bool             is_running_locally,
+                                int              number_of_top_correlations_to_save)
 
 {
 
-    this->first_search_position = first_search_position;
-    this->last_search_position  = last_search_position;
-    this->angles                = angles;
-    this->global_euler_search   = global_euler_search;
+    this->first_search_position              = first_search_position;
+    this->last_search_position               = last_search_position;
+    this->angles                             = angles;
+    this->global_euler_search                = global_euler_search;
+    this->number_of_top_correlations_to_save = number_of_top_correlations_to_save;
 
     this->psi_start = psi_start;
     this->psi_step  = psi_step;
@@ -79,7 +81,9 @@ void TemplateMatchingCore::Init(MyApp*           parent_pointer,
     d_current_projection.Init(this->current_projection);
 
     d_padded_reference.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
+    //    wxPrintf("number of streaming multiprocessors = %i\n", d_input_image.number_of_streaming_multiprocessors);
     d_max_intensity_projection.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
+    d_top_intensity_projection.Allocate(d_input_image.dims.x, d_input_image.dims.y, number_of_top_correlations_to_save, true); //TODO change 1 to K
     d_best_psi.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
     d_best_theta.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
     d_best_phi.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
@@ -116,6 +120,7 @@ void TemplateMatchingCore::RunInnerLoop(Image& projection_filter, float c_pixel,
 
     // Make sure we are starting with zeros
     d_max_intensity_projection.Zeros( );
+    d_top_intensity_projection.Zeros( );
     d_best_psi.Zeros( );
     d_best_phi.Zeros( );
     d_best_theta.Zeros( );
@@ -128,9 +133,8 @@ void TemplateMatchingCore::RunInnerLoop(Image& projection_filter, float c_pixel,
     d_sum3.Zeros( );
     d_sumSq3.Zeros( );
 
-    this->c_defocus                 = c_defocus;
-    this->c_pixel                   = c_pixel;
-    total_number_of_cccs_calculated = 0;
+    this->c_defocus = c_defocus;
+    this->c_pixel   = c_pixel;
 
     // Either do not delete the single precision, or add in a copy here so that each loop over defocus vals
     // have a copy to work with. Otherwise this will not exist on the second loop
@@ -140,7 +144,9 @@ void TemplateMatchingCore::RunInnerLoop(Image& projection_filter, float c_pixel,
     cudaErr(cudaMalloc((void**)&my_peaks, sizeof(__half2) * d_input_image.real_memory_allocated));
     cudaErr(cudaMalloc((void**)&my_new_peaks, sizeof(__half2) * d_input_image.real_memory_allocated));
     cudaErr(cudaMalloc((void**)&my_stats, sizeof(__half2) * d_input_image.real_memory_allocated));
+    cudaErr(cudaMalloc((void**)&my_top_K_peaks, number_of_top_correlations_to_save * sizeof(__half2) * d_input_image.real_memory_allocated));
     cudaErr(cudaMemset(my_peaks, 0, sizeof(__half2) * d_input_image.real_memory_allocated));
+    cudaErr(cudaMemset(my_top_K_peaks, 0, number_of_top_correlations_to_save * sizeof(__half2) * d_input_image.real_memory_allocated));
     //	cudaErr(cudaMemset(my_stats,0,sizeof(Peaks)*d_input_image.real_memory_allocated));
 
     cudaEvent_t projection_is_free_Event, gpu_work_is_done_Event;
@@ -203,6 +209,10 @@ void TemplateMatchingCore::RunInnerLoop(Image& projection_filter, float c_pixel,
 
             //      d_padded_reference.ForwardFFTAndClipInto(d_current_projection,false);
             d_padded_reference.BackwardFFTAfterComplexConjMul(d_input_image.complex_values_16f, true);
+            //  wxPrintf("gridDims = (%i,%i,%i)\n", d_padded_reference.gridDims.x, d_padded_reference.gridDims.y, d_padded_reference.gridDims.z, d_padded_reference.gridDims.y);
+            //  wxPrintf("gridDims = (%i,%i,%i %i)\n", d_padded_reference.dims.x, d_padded_reference.dims.y, d_padded_reference.dims.z, d_padded_reference.dims.w);
+            //   wxPrintf("threadsperblock = (%i,%i,%i)\n", d_padded_reference.threadsPerBlock.x, d_padded_reference.threadsPerBlock.y, d_padded_reference.threadsPerBlock.z);
+            //  wxPrintf("real memory allocated = %i\n", d_max_intensity_projection.real_memory_allocated);
 
             //			d_padded_reference.BackwardFFTAfterComplexConjMul(d_input_image.complex_values_gpu, false);
             //			d_padded_reference.ConvertToHalfPrecision(false);
@@ -244,7 +254,6 @@ void TemplateMatchingCore::RunInnerLoop(Image& projection_filter, float c_pixel,
             //			}
 
             ccc_counter++;
-            total_number_of_cccs_calculated++;
 
             if ( ccc_counter % 10 == 0 ) {
                 this->AccumulateSums(my_stats, d_sum1, d_sumSq1);
@@ -315,6 +324,7 @@ void TemplateMatchingCore::RunInnerLoop(Image& projection_filter, float c_pixel,
     cudaErr(cudaFree(my_peaks));
     cudaErr(cudaFree(my_stats));
     cudaErr(cudaFree(my_new_peaks));
+    cudaErr(cudaFree(my_top_K_peaks));
 }
 
 void TemplateMatchingCore::MipPixelWise(__half psi, __half theta, __half phi) {
@@ -324,12 +334,12 @@ void TemplateMatchingCore::MipPixelWise(__half psi, __half theta, __half phi) {
             // N*
             d_padded_reference.ReturnLaunchParamtersLimitSMs(5.f, 1024);
 
-    MipPixelWiseKernel<<<d_padded_reference.gridDims, d_padded_reference.threadsPerBlock, 0, cudaStreamPerThread>>>((__half*)d_padded_reference.real_values_16f, my_peaks, (int)d_padded_reference.real_memory_allocated, psi, theta, phi, my_stats, my_new_peaks);
+    MipPixelWiseKernel<<<d_padded_reference.gridDims, d_padded_reference.threadsPerBlock, 0, cudaStreamPerThread>>>((__half*)d_padded_reference.real_values_16f, my_peaks, my_top_K_peaks, (int)d_padded_reference.real_memory_allocated, psi, theta, phi, my_stats, my_new_peaks, number_of_top_correlations_to_save);
     postcheck
 }
 
-__global__ void MipPixelWiseKernel(__half* correlation_output, __half2* my_peaks, const int numel,
-                                   __half psi, __half theta, __half phi, __half2* my_stats, __half2* my_new_peaks) {
+__global__ void MipPixelWiseKernel(__half* correlation_output, __half2* my_peaks, __half2* my_top_K_peaks, const int numel,
+                                   __half psi, __half theta, __half phi, __half2* my_stats, __half2* my_new_peaks, const int K) {
 
     //	Peaks tmp_peak;
 
@@ -347,7 +357,26 @@ __global__ void MipPixelWiseKernel(__half* correlation_output, __half2* my_peaks
         //			tmp_peak.psi = psi;
         //			tmp_peak.theta = theta;
         //			tmp_peak.phi = phi;
-        if ( half_val > __low2half(my_peaks[i]) ) {
+
+        // list was initialized to 0
+        // find the smallest CC in my_top_K_peaks
+
+        __half min_CC       = __float2half_rn(FLT_MAX);
+        int    min_CC_index = 1;
+        for ( int j = 0; j < K; j++ ) {
+            if ( __low2half(my_top_K_peaks[i + j * numel]) < min_CC ) {
+                min_CC       = __low2half(my_top_K_peaks[i + j * numel]);
+                min_CC_index = j;
+            }
+        }
+
+        if ( half_val > min_CC ) {
+            my_top_K_peaks[i + min_CC_index * numel] = __halves2half2(half_val, psi);
+        }
+
+        // replace min CC in the list with newly calculated CC
+
+        if ( half_val > __low2half(my_peaks[i]) ) { // what if all orientations at this location is smaller than 0?
             //				tmp_peak.mip = half_val;
             my_peaks[i]     = __halves2half2(half_val, psi);
             my_new_peaks[i] = __halves2half2(theta, phi);
@@ -361,7 +390,7 @@ __global__ void MipPixelWiseKernel(__half* correlation_output, __half2* my_peaks
     //
 }
 
-__global__ void MipToImageKernel(const __half2*, const __half2* my_new_peaks, const int, cufftReal*, cufftReal*, cufftReal*, cufftReal*);
+__global__ void MipToImageKernel(const __half2*, const __half2* my_new_peaks, const __half2*, const int, cufftReal*, cufftReal*, cufftReal*, cufftReal*, cufftReal*, const int);
 
 void TemplateMatchingCore::MipToImage( ) {
 
@@ -369,16 +398,19 @@ void TemplateMatchingCore::MipToImage( ) {
             dim3 threadsPerBlock = dim3(1024, 1, 1);
     dim3         gridDims        = dim3((d_max_intensity_projection.real_memory_allocated + threadsPerBlock.x - 1) / threadsPerBlock.x, 1, 1);
 
-    MipToImageKernel<<<gridDims, threadsPerBlock, 0, cudaStreamPerThread>>>(my_peaks, my_new_peaks, d_max_intensity_projection.real_memory_allocated,
-                                                                            d_max_intensity_projection.real_values_gpu, d_best_psi.real_values_gpu, d_best_theta.real_values_gpu, d_best_phi.real_values_gpu);
+    MipToImageKernel<<<gridDims, threadsPerBlock, 0, cudaStreamPerThread>>>(my_peaks, my_new_peaks, my_top_K_peaks, d_max_intensity_projection.real_memory_allocated, d_max_intensity_projection.real_values_gpu, d_top_intensity_projection.real_values_gpu, d_best_psi.real_values_gpu, d_best_theta.real_values_gpu, d_best_phi.real_values_gpu, number_of_top_correlations_to_save);
     postcheck
 }
 
-__global__ void MipToImageKernel(const __half2* my_peaks, const __half2* my_new_peaks, const int numel, cufftReal* mip, cufftReal* psi, cufftReal* theta, cufftReal* phi) {
+__global__ void MipToImageKernel(const __half2* my_peaks, const __half2* my_new_peaks, const __half2* my_top_K_peaks, const int numel, cufftReal* mip, cufftReal* tip, cufftReal* psi, cufftReal* theta, cufftReal* phi, const int K) {
 
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
 
     if ( x < numel ) {
+
+        for ( int j = 0; j < K; j++ ) {
+            tip[x + j * numel] = (cufftReal)__low2float(my_top_K_peaks[x + j * numel]);
+        }
 
         mip[x]   = (cufftReal)__low2float(my_peaks[x]);
         psi[x]   = (cufftReal)__high2float(my_peaks[x]);

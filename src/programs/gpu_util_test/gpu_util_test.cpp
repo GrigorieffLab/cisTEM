@@ -111,17 +111,18 @@ void GpuUtilTest::TemplateMatchingStandalone(int nThreads, int nGPUs) {
         EulerSearch     global_euler_search;
         AnglesAndShifts angles;
 
-        float angular_step            = 2.5f;
-        float psi_step                = 1.5f;
-        float pixel_size              = 1.5;
-        float pixel_size_search_range = 0.0f;
-        float pixel_size_step         = 0.001f;
-        float defocus_search_range    = 0.0f;
-        float defocus_step            = 200.0f;
-        float defocus1                = 19880.0f;
-        float defocus2                = 18910.0f;
-        long  first_search_position   = 0 + (tIDX * incPos);
-        long  last_search_position    = incPos + (tIDX * incPos);
+        float angular_step                       = 2.5f;
+        float psi_step                           = 1.5f;
+        float pixel_size                         = 1.5;
+        float pixel_size_search_range            = 0.0f;
+        float pixel_size_step                    = 0.001f;
+        float defocus_search_range               = 0.0f;
+        float defocus_step                       = 200.0f;
+        float defocus1                           = 19880.0f;
+        float defocus2                           = 18910.0f;
+        long  first_search_position              = 0 + (tIDX * incPos);
+        long  last_search_position               = incPos + (tIDX * incPos);
+        int   number_of_top_correlations_to_save = 5;
 
         if ( tIDX == (nThreads * nGPUs - 1) )
             last_search_position = maxPos;
@@ -158,7 +159,7 @@ void GpuUtilTest::TemplateMatchingStandalone(int nThreads, int nGPUs) {
                        angles, global_euler_search,
                        histogram_min_scaled, histogram_step_scaled, histogram_number_of_points,
                        max_padding, first_search_position, last_search_position,
-                       my_progress, total_correlation_positions, is_running_locally);
+                       my_progress, total_correlation_positions, is_running_locally, number_of_top_correlations_to_save);
 
         int size_i    = 0;
         int defocus_i = 0;
