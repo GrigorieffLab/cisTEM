@@ -82,6 +82,9 @@ class TemplateMatchingCore {
     GpuImage d_best_psi;
     GpuImage d_best_phi;
     GpuImage d_best_theta;
+    GpuImage d_top_psi;
+    GpuImage d_top_phi;
+    GpuImage d_top_theta;
     GpuImage d_best_defocus;
     GpuImage d_best_pixel_size;
 
@@ -137,10 +140,12 @@ class TemplateMatchingCore {
     __half2* my_peaks;
     __half2* my_new_peaks; // for passing euler angles to the callback
     __half2* my_top_K_peaks;
-    void     SumPixelWise(GpuImage& image);
-    void     MipPixelWise(__half psi, __half theta, __half phi);
-    void     MipToImage( );
-    void     AccumulateSums(__half2* my_stats, GpuImage& sum, GpuImage& sq_sum);
+    __half2* my_top_K_new_peaks;
+
+    void SumPixelWise(GpuImage& image);
+    void MipPixelWise(__half psi, __half theta, __half phi);
+    void MipToImage( );
+    void AccumulateSums(__half2* my_stats, GpuImage& sum, GpuImage& sq_sum);
 
     void Init(MyApp*           parent_pointer,
               Image&           template_reconstruction,
