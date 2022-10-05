@@ -8,7 +8,7 @@
             "wx_dir_dynamic": "/opt/WX/intel-dynamic/bin/wx-config",
             "wx_dir_static": "/opt/WX/intel-static/bin/wx-config",
             "build_dir": "${workspaceFolder}/build",
-            "compile_cores": "12",
+            "compile_cores": "44",
             "GIT_BRANCH": "git rev-parse --abbrev-ref HEAD"
         }
     },
@@ -16,7 +16,7 @@
         {
             "label": "CONFIG intel,gpu,debug,static",
             "type": "shell",
-            "command": "mkdir -p ${build_dir}/$(${GIT_BRANCH})_Intel-gpu-debug-static && cd ${build_dir}/$(${GIT_BRANCH})_Intel-gpu-debug-static && CC=icc CXX=icpc ../../configure  --enable-debugmode --enable-staticmode --enable-samples --enable-experimental --enable-openmp --with-wx-config=${wx_dir_static}"
+            "command": "mkdir -p ${build_dir}/$(${GIT_BRANCH})_Intel-gpu-debug-static && cd ${build_dir}/$(${GIT_BRANCH})_Intel-gpu-debug-static && CC=icc CXX=icpc ../../configure  --enable-debugmode --enable-staticmode --enable-samples --enable-experimental --enable-openmp --with-wx-config=${wx_dir_static} --with-cuda=${cuda_dir}"
         },
         {
             "label": "BUILD intel,gpu,debug,static",

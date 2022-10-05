@@ -60,6 +60,10 @@ class TemplateMatchJobResults {
     wxString projection_result_filename;
     wxString avg_filename;
     wxString std_filename;
+  //  wxString tip_filename;
+  //  wxString top_psi_filename;
+  //  wxString top_theta_filename;
+  //  wxString top_phi_filename;
 
     float refinement_threshold;
     float used_threshold;

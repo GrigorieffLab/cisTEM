@@ -65,6 +65,7 @@ class TemplateMatchingCore {
     int nGPUs;
     int nThreads;
     int number_of_jobs_per_image_in_gui;
+    int number_of_top_correlations_to_save;
 
     // CPU images to be passed in -
     Image template_reconstruction;
@@ -77,9 +78,13 @@ class TemplateMatchingCore {
 
     // These are assumed to be empty containers at the outset, so xfer host-->device is skipped
     GpuImage d_max_intensity_projection;
+    GpuImage d_top_intensity_projection;
     GpuImage d_best_psi;
     GpuImage d_best_phi;
     GpuImage d_best_theta;
+    GpuImage d_top_psi;
+    GpuImage d_top_phi;
+    GpuImage d_top_theta;
     GpuImage d_best_defocus;
     GpuImage d_best_pixel_size;
 
@@ -134,10 +139,13 @@ class TemplateMatchingCore {
     __half2* my_stats;
     __half2* my_peaks;
     __half2* my_new_peaks; // for passing euler angles to the callback
-    void     SumPixelWise(GpuImage& image);
-    void     MipPixelWise(__half psi, __half theta, __half phi);
-    void     MipToImage( );
-    void     AccumulateSums(__half2* my_stats, GpuImage& sum, GpuImage& sq_sum);
+    __half2* my_top_K_peaks;
+    __half2* my_top_K_new_peaks;
+
+    void SumPixelWise(GpuImage& image);
+    void MipPixelWise(__half psi, __half theta, __half phi);
+    void MipToImage( );
+    void AccumulateSums(__half2* my_stats, GpuImage& sum, GpuImage& sq_sum);
 
     void Init(MyApp*           parent_pointer,
               Image&           template_reconstruction,
@@ -163,7 +171,8 @@ class TemplateMatchingCore {
               int              last_search_position,
               ProgressBar*     my_progress,
               long             total_correlation_positions,
-              bool             is_running_locally);
+              bool             is_running_locally,
+              int              number_of_top_correlations_to_save);
 
     void RunInnerLoop(Image& projection_filter, float pixel_i, float defocus_i, int threadIDX, long& current_correlation_position);
 

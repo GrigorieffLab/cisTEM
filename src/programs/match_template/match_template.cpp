@@ -1,11 +1,33 @@
 #include "../../core/core_headers.h"
 
 #include "../../core/cistem_constants.h"
-
+#include <set>
+#include "stdio.h"
+#include <numeric>
+#include <vector>
+#include <stdlib.h> /* qsort */
 // Values for data that are passed around in the results.
-const int number_of_output_images     = 8; //mip, psi, theta, phi, pixel, defocus, sums, sqsums (scaled mip is not sent out)
-const int number_of_meta_data_values  = 6; // img_x, img_y, number cccs, histogram values.
-const int MAX_ALLOWED_NUMBER_OF_PEAKS = 1000; // An error will be thrown and job aborted if this number of peaks is exceeded in the make template results block
+const int number_of_output_images                 = 8; //mip, psi, theta, phi, pixel, defocus, sums, sqsums (scaled mip is not sent out)
+const int number_of_meta_data_values              = 6; // img_x, img_y, number cccs, histogram values.
+const int MAX_ALLOWED_NUMBER_OF_PEAKS             = 1000; // An error will be thrown and job aborted if this number of peaks is exceeded in the make template results block
+const int number_of_additional_images_for_top_ccs = 4; // tip, top_psi, top_theta, top_phi
+const int number_of_top_correlations_to_save      = 5;
+
+struct PixelOrder {
+    float pixel_value;
+    int   pixel_index_in_z_dimension;
+};
+
+int compare_pixel_value(const void* a, const void* b) {
+    struct PixelOrder* a1 = (struct PixelOrder*)a;
+    struct PixelOrder* a2 = (struct PixelOrder*)b;
+    if ( (*a1).pixel_value > (*a2).pixel_value )
+        return -1;
+    else if ( (*a1).pixel_value < (*a2).pixel_value )
+        return 1;
+    else
+        return 0;
+}
 
 class AggregatedTemplateResult {
   public:
@@ -23,10 +45,26 @@ class AggregatedTemplateResult {
     float* collated_pixel_sums;
     float* collated_pixel_square_sums;
     long*  collated_histogram_data;
+    float* collated_tip_data;
+    float* collated_top_psi;
+    float* collated_top_theta;
+    float* collated_top_phi;
 
     AggregatedTemplateResult( );
     ~AggregatedTemplateResult( );
     void AddResult(float* result_array, long array_size, int result_number, int number_of_expected_results);
+};
+
+class SortedTemplateResult {
+  public:
+    Image ordered_cc;
+    Image ordered_psi;
+    Image ordered_theta;
+    Image ordered_phi;
+    int   number_of_ccs_to_sort;
+
+    SortedTemplateResult(int K);
+    void SortResultUsingCorrelations(Image* cc, Image* psi, Image* theta, Image* phi);
 };
 
 WX_DECLARE_OBJARRAY(AggregatedTemplateResult, ArrayOfAggregatedTemplateResults);
@@ -422,6 +460,7 @@ bool MatchTemplateApp::DoCalculation( ) {
     int current_search_position;
     int current_x;
     int current_y;
+    int current_z;
 
     int factorizable_x;
     int factorizable_y;
@@ -464,6 +503,10 @@ bool MatchTemplateApp::DoCalculation( ) {
     Image projection_filter;
 
     Image max_intensity_projection;
+    Image top_intensity_projection;
+    Image top_psi;
+    Image top_theta;
+    Image top_phi;
 
     Image best_psi;
     Image best_theta;
@@ -569,6 +612,10 @@ bool MatchTemplateApp::DoCalculation( ) {
     best_psi.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
     best_theta.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
     best_phi.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
+    top_intensity_projection.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, number_of_top_correlations_to_save);
+    top_psi.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 5);
+    top_theta.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 5);
+    top_phi.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 5);
     best_defocus.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
     best_pixel_size.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
     correlation_pixel_sum_image.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
@@ -578,9 +625,13 @@ bool MatchTemplateApp::DoCalculation( ) {
 
     padded_reference.SetToConstant(0.0f);
     max_intensity_projection.SetToConstant(-FLT_MAX);
+    top_intensity_projection.SetToConstant(-FLT_MAX);
     best_psi.SetToConstant(0.0f);
     best_theta.SetToConstant(0.0f);
     best_phi.SetToConstant(0.0f);
+    top_psi.SetToConstant(0.0f);
+    top_theta.SetToConstant(0.0f);
+    top_phi.SetToConstant(0.0f);
     best_defocus.SetToConstant(0.0f);
 
     ZeroDoubleArray(correlation_pixel_sum, input_image.real_memory_allocated);
@@ -721,7 +772,9 @@ bool MatchTemplateApp::DoCalculation( ) {
     }
 
     ProgressBar* my_progress;
-
+    int          number_of_correlations_calculated_at_each_pixel = 0;
+    float        min_value_at_each_pixel                         = FLT_MAX;
+    int          min_value_index_at_each_pixel                   = 0;
     //Loop over ever search position
 
     wxPrintf("\n\tFor image id %i\n", image_number_for_gui);
@@ -812,7 +865,7 @@ bool MatchTemplateApp::DoCalculation( ) {
                                    angles, global_euler_search,
                                    histogram_min_scaled, histogram_step_scaled, histogram_number_of_points,
                                    max_padding, t_first_search_position, t_last_search_position,
-                                   my_progress, total_correlation_positions_per_thread, is_running_locally);
+                                   my_progress, total_correlation_positions_per_thread, is_running_locally, number_of_top_correlations_to_save);
 
                     wxPrintf("%d\n", tIDX);
                     wxPrintf("%d\n", t_first_search_position);
@@ -839,11 +892,13 @@ bool MatchTemplateApp::DoCalculation( ) {
             if ( use_gpu ) {
 #ifdef ENABLEGPU
                 //            wxPrintf("\n\n\t\tsizeI defI %d %d\n\n\n", size_i, defocus_i);
-
+                bool list_is_full = false;
 #pragma omp parallel num_threads(max_threads)
                 {
                     int tIDX = ReturnThreadNumberOfCurrentThread( );
                     gpuDev.SetGpu(tIDX);
+
+                    int k;
 
                     GPU[tIDX].RunInnerLoop(projection_filter, size_i, defocus_i, tIDX, current_correlation_position);
 
@@ -852,17 +907,29 @@ bool MatchTemplateApp::DoCalculation( ) {
 
                         Image mip_buffer;
                         mip_buffer.CopyFrom(&max_intensity_projection);
+                        Image tip_buffer;
+                        tip_buffer.CopyFrom(&top_intensity_projection);
                         Image psi_buffer;
                         psi_buffer.CopyFrom(&max_intensity_projection);
                         Image phi_buffer;
                         phi_buffer.CopyFrom(&max_intensity_projection);
                         Image theta_buffer;
                         theta_buffer.CopyFrom(&max_intensity_projection);
+                        Image top_psi_buffer;
+                        top_psi_buffer.CopyFrom(&top_psi);
+                        Image top_phi_buffer;
+                        top_phi_buffer.CopyFrom(&top_phi);
+                        Image top_theta_buffer;
+                        top_theta_buffer.CopyFrom(&top_theta);
 
                         GPU[tIDX].d_max_intensity_projection.CopyDeviceToHost(mip_buffer, true, false);
+                        GPU[tIDX].d_top_intensity_projection.CopyDeviceToHost(tip_buffer, true, false);
                         GPU[tIDX].d_best_psi.CopyDeviceToHost(psi_buffer, true, false);
                         GPU[tIDX].d_best_phi.CopyDeviceToHost(phi_buffer, true, false);
                         GPU[tIDX].d_best_theta.CopyDeviceToHost(theta_buffer, true, false);
+                        GPU[tIDX].d_top_psi.CopyDeviceToHost(top_psi_buffer, true, false);
+                        GPU[tIDX].d_top_phi.CopyDeviceToHost(top_phi_buffer, true, false);
+                        GPU[tIDX].d_top_theta.CopyDeviceToHost(top_theta_buffer, true, false);
 
                         //                    mip_buffer.QuickAndDirtyWriteSlice("/tmp/tmpMipBuffer.mrc",1,1);
                         // TODO should prob aggregate these across all workers
@@ -880,12 +947,59 @@ bool MatchTemplateApp::DoCalculation( ) {
                         GPU[tIDX].d_sumSq3.CopyDeviceToHost(sumSq, true, false);
 
                         GPU[tIDX].d_max_intensity_projection.Wait( );
+                        GPU[tIDX].d_top_intensity_projection.Wait( );
+                        GPU[tIDX].d_top_psi.Wait( );
+                        GPU[tIDX].d_top_theta.Wait( );
+                        GPU[tIDX].d_top_phi.Wait( );
 
                         // TODO swap max_padding for explicit padding in x/y and limit calcs to that region.
                         pixel_counter = 0;
                         for ( current_y = 0; current_y < max_intensity_projection.logical_y_dimension; current_y++ ) {
                             for ( current_x = 0; current_x < max_intensity_projection.logical_x_dimension; current_x++ ) {
                                 // first mip
+
+                                // use results from first thread to fill the list first
+                                if ( ! list_is_full ) {
+                                    // replace -inf with first K correlations calculated
+                                    for ( k = 0; k < number_of_top_correlations_to_save; k++ ) {
+                                        top_intensity_projection.ReplaceRealPixelAtPhysicalCoord(tip_buffer.ReturnRealPixelFromPhysicalCoord(current_x, current_y, k), current_x, current_y, k);
+                                        top_psi.ReplaceRealPixelAtPhysicalCoord(top_psi_buffer.ReturnRealPixelFromPhysicalCoord(current_x, current_y, k), current_x, current_y, k);
+                                        top_theta.ReplaceRealPixelAtPhysicalCoord(top_theta_buffer.ReturnRealPixelFromPhysicalCoord(current_x, current_y, k), current_x, current_y, k);
+                                        top_phi.ReplaceRealPixelAtPhysicalCoord(top_phi_buffer.ReturnRealPixelFromPhysicalCoord(current_x, current_y, k), current_x, current_y, k);
+                                    }
+                                    list_is_full = true;
+                                    //  wxPrintf("thread %i reports list is full\n", tIDX);
+                                }
+
+                                // now the list is "full"
+                                else {
+                                    //  wxPrintf("thread %i starts to update list\n", tIDX);
+
+                                    // go through each slice in the incoming buffer, if incomming value larger than min in list, update tip and angles
+                                    for ( k = 0; k < tip_buffer.logical_z_dimension; k++ ) {
+                                        // find the minimum in the list and record its index
+                                        min_value_at_each_pixel = FLT_MAX;
+                                        for ( current_z = 0; current_z < top_intensity_projection.logical_z_dimension; current_z++ ) {
+                                            if ( min_value_at_each_pixel > top_intensity_projection.ReturnRealPixelFromPhysicalCoord(current_x, current_y, current_z) ) {
+                                                min_value_at_each_pixel       = top_intensity_projection.ReturnRealPixelFromPhysicalCoord(current_x, current_y, current_z);
+                                                min_value_index_at_each_pixel = current_z;
+                                                // wxPrintf("min index = %i val = %f\n", min_value_index_at_each_pixel, min_value_at_each_pixel);
+                                            }
+                                        }
+                                        // if the incoming buffer at this slice larger than min value replace
+                                        if ( tip_buffer.ReturnRealPixelFromPhysicalCoord(current_x, current_y, k) > min_value_at_each_pixel ) {
+                                            top_intensity_projection.ReplaceRealPixelAtPhysicalCoord(tip_buffer.ReturnRealPixelFromPhysicalCoord(current_x, current_y, k), current_x, current_y, min_value_index_at_each_pixel);
+                                            top_psi.ReplaceRealPixelAtPhysicalCoord(top_psi_buffer.ReturnRealPixelFromPhysicalCoord(current_x, current_y, k), current_x, current_y, min_value_index_at_each_pixel);
+                                            top_theta.ReplaceRealPixelAtPhysicalCoord(top_theta_buffer.ReturnRealPixelFromPhysicalCoord(current_x, current_y, k), current_x, current_y, min_value_index_at_each_pixel);
+                                            top_phi.ReplaceRealPixelAtPhysicalCoord(top_phi_buffer.ReturnRealPixelFromPhysicalCoord(current_x, current_y, k), current_x, current_y, min_value_index_at_each_pixel);
+                                        }
+                                    }
+                                }
+
+                                // at the end of this thread report current status
+                                // for ( k = 0; k < number_of_top_correlations_to_save; k++ ) {
+                                //    wxPrintf("updated list from thread %i: slice %i @ %f %f %f = %f\n", tIDX, k, top_psi.ReturnRealPixelFromPhysicalCoord(current_x, current_y, k), top_theta.ReturnRealPixelFromPhysicalCoord(current_x, current_y, k), top_phi.ReturnRealPixelFromPhysicalCoord(current_x, current_y, k), top_intensity_projection.ReturnRealPixelFromPhysicalCoord(current_x, current_y, k));
+                                // }
 
                                 if ( mip_buffer.real_values[pixel_counter] > max_intensity_projection.real_values[pixel_counter] ) {
                                     max_intensity_projection.real_values[pixel_counter] = mip_buffer.real_values[pixel_counter];
@@ -917,6 +1031,8 @@ bool MatchTemplateApp::DoCalculation( ) {
 
 #endif
             }
+
+            number_of_correlations_calculated_at_each_pixel = 0;
 
             for ( current_search_position = first_search_position; current_search_position <= last_search_position; current_search_position++ ) {
                 //loop over each rotation angle
@@ -1016,10 +1132,42 @@ bool MatchTemplateApp::DoCalculation( ) {
                     //                    }
 
                     // update mip, and histogram..
-                    pixel_counter = 0;
+                    pixel_counter                 = 0;
+                    min_value_at_each_pixel       = FLT_MAX;
+                    min_value_index_at_each_pixel = 0;
 
                     for ( current_y = 0; current_y < max_intensity_projection.logical_y_dimension; current_y++ ) {
                         for ( current_x = 0; current_x < max_intensity_projection.logical_x_dimension; current_x++ ) {
+
+                            if ( number_of_correlations_calculated_at_each_pixel < number_of_top_correlations_to_save ) {
+                                // replace -inf with first K correlations calculated
+                                top_intensity_projection.ReplaceRealPixelAtPhysicalCoord(padded_reference.real_values[pixel_counter], current_x, current_y, number_of_correlations_calculated_at_each_pixel);
+                                top_psi.ReplaceRealPixelAtPhysicalCoord(current_psi, current_x, current_y, number_of_correlations_calculated_at_each_pixel);
+                                top_theta.ReplaceRealPixelAtPhysicalCoord(global_euler_search.list_of_search_parameters[current_search_position][1], current_x, current_y, number_of_correlations_calculated_at_each_pixel);
+                                top_phi.ReplaceRealPixelAtPhysicalCoord(global_euler_search.list_of_search_parameters[current_search_position][0], current_x, current_y, number_of_correlations_calculated_at_each_pixel);
+                                //     wxPrintf("fill in list with: %i %f %f %f = %f\n", number_of_correlations_calculated_at_each_pixel, top_psi.ReturnRealPixelFromPhysicalCoord(current_x, current_y, number_of_correlations_calculated_at_each_pixel), top_theta.ReturnRealPixelFromPhysicalCoord(current_x, current_y, number_of_correlations_calculated_at_each_pixel), top_phi.ReturnRealPixelFromPhysicalCoord(current_x, current_y, number_of_correlations_calculated_at_each_pixel), top_intensity_projection.ReturnRealPixelFromPhysicalCoord(current_x, current_y, number_of_correlations_calculated_at_each_pixel));
+                            }
+                            else {
+                                // now the list is "full"
+                                // find the minimum in the list and record its index
+                                for ( current_z = 0; current_z < top_intensity_projection.logical_z_dimension; current_z++ ) {
+                                    if ( min_value_at_each_pixel > top_intensity_projection.ReturnRealPixelFromPhysicalCoord(current_x, current_y, current_z) ) {
+                                        min_value_at_each_pixel       = top_intensity_projection.ReturnRealPixelFromPhysicalCoord(current_x, current_y, current_z);
+                                        min_value_index_at_each_pixel = current_z;
+                                    }
+                                }
+                                // if incomming value larger than min in list, update top_correlations and angles
+                                if ( padded_reference.real_values[pixel_counter] > min_value_at_each_pixel ) {
+                                    top_intensity_projection.ReplaceRealPixelAtPhysicalCoord(padded_reference.real_values[pixel_counter], current_x, current_y, min_value_index_at_each_pixel);
+                                    top_psi.ReplaceRealPixelAtPhysicalCoord(current_psi, current_x, current_y, min_value_index_at_each_pixel);
+                                    top_theta.ReplaceRealPixelAtPhysicalCoord(global_euler_search.list_of_search_parameters[current_search_position][1], current_x, current_y, min_value_index_at_each_pixel);
+                                    top_phi.ReplaceRealPixelAtPhysicalCoord(global_euler_search.list_of_search_parameters[current_search_position][0], current_x, current_y, min_value_index_at_each_pixel);
+                                }
+                                //  for ( int k = 0; k < number_of_top_correlations_to_save; k++ ) {
+                                //     wxPrintf("updated list %i %f %f %f = %f\n", k, top_psi.ReturnRealPixelFromPhysicalCoord(current_x, current_y, k), top_theta.ReturnRealPixelFromPhysicalCoord(current_x, current_y, k), top_phi.ReturnRealPixelFromPhysicalCoord(current_x, current_y, k), top_intensity_projection.ReturnRealPixelFromPhysicalCoord(current_x, current_y, k));
+                                //   }
+                            }
+
                             // first mip
 
                             if ( padded_reference.real_values[pixel_counter] > max_intensity_projection.real_values[pixel_counter] ) {
@@ -1047,6 +1195,7 @@ bool MatchTemplateApp::DoCalculation( ) {
 
                         pixel_counter += padded_reference.padding_jump_value;
                     }
+                    number_of_correlations_calculated_at_each_pixel++;
 
                     //                    correlation_pixel_sum.AddImage(&padded_reference);
                     for ( pixel_counter = 0; pixel_counter < padded_reference.real_memory_allocated; pixel_counter++ ) {
@@ -1081,6 +1230,10 @@ bool MatchTemplateApp::DoCalculation( ) {
 
     wxPrintf("\n\n\tTimings: Overall: %s\n", (wxDateTime::Now( ) - overall_start).Format( ));
 
+    // sort results pooled from multiple threads
+    SortedTemplateResult sorted_images(number_of_top_correlations_to_save);
+    sorted_images.SortResultUsingCorrelations(&top_intensity_projection, &top_psi, &top_theta, &top_phi);
+
     for ( pixel_counter = 0; pixel_counter < input_image.real_memory_allocated; pixel_counter++ ) {
         correlation_pixel_sum_image.real_values[pixel_counter]            = (float)correlation_pixel_sum[pixel_counter];
         correlation_pixel_sum_of_squares_image.real_values[pixel_counter] = (float)correlation_pixel_sum_of_squares[pixel_counter];
@@ -1091,17 +1244,29 @@ bool MatchTemplateApp::DoCalculation( ) {
         input_image.BackwardFFT( );
         input_image.RotateInPlaceAboutZBy90Degrees(false);
         max_intensity_projection.RotateInPlaceAboutZBy90Degrees(false);
+        sorted_images.ordered_cc.RotateInPlaceAboutZBy90Degrees(false);
 
         best_psi.RotateInPlaceAboutZBy90Degrees(false);
+        sorted_images.ordered_psi.RotateInPlaceAboutZBy90Degrees(false);
         // If the template is also rotated, then this additional accounting is not needed.
         // To account for the pre-rotation, psi needs to have 90 added to it.
         best_psi.AddConstant(90.0f);
+        sorted_images.ordered_psi.AddConstant(90.0f);
         // We also want the angles to remain in (0,360] so loop over and clamp
         for ( int idx = 0; idx < best_psi.real_memory_allocated; idx++ ) {
             best_psi.real_values[idx] = clamp_angular_range_0_to_2pi(best_psi.real_values[idx], true);
         }
+
+        for ( int idx = 0; idx < top_psi.real_memory_allocated; idx++ ) {
+            sorted_images.ordered_psi.real_values[idx] = clamp_angular_range_0_to_2pi(sorted_images.ordered_psi.real_values[idx], true);
+        }
+
         best_theta.RotateInPlaceAboutZBy90Degrees(false);
         best_phi.RotateInPlaceAboutZBy90Degrees(false);
+
+        sorted_images.ordered_theta.RotateInPlaceAboutZBy90Degrees(false);
+        sorted_images.ordered_phi.RotateInPlaceAboutZBy90Degrees(false);
+
         best_defocus.RotateInPlaceAboutZBy90Degrees(false);
         best_pixel_size.RotateInPlaceAboutZBy90Degrees(false);
 
@@ -1213,12 +1378,20 @@ bool MatchTemplateApp::DoCalculation( ) {
         correlation_pixel_sum_image.QuickAndDirtyWriteSlice(correlation_avg_output_file.ToStdString( ), 1, pixel_size);
         correlation_pixel_sum_of_squares_image.Resize(original_input_image_x, original_input_image_y, 1, correlation_pixel_sum_of_squares_image.ReturnAverageOfRealValuesOnEdges( ));
         correlation_pixel_sum_of_squares_image.QuickAndDirtyWriteSlice(correlation_std_output_file.ToStdString( ), 1, pixel_size);
+        sorted_images.ordered_cc.Resize(original_input_image_x, original_input_image_y, number_of_top_correlations_to_save, 0.0f);
+        sorted_images.ordered_cc.QuickAndDirtyWriteSlices("tip.mrc", 1, number_of_top_correlations_to_save, true, pixel_size);
         best_psi.Resize(original_input_image_x, original_input_image_y, 1, 0.0f);
         best_psi.QuickAndDirtyWriteSlice(best_psi_output_file.ToStdString( ), 1, pixel_size);
+        sorted_images.ordered_psi.Resize(original_input_image_x, original_input_image_y, number_of_top_correlations_to_save, 0.0f);
+        sorted_images.ordered_psi.QuickAndDirtyWriteSlices("top_psi.mrc", 1, number_of_top_correlations_to_save, true, pixel_size);
         best_theta.Resize(original_input_image_x, original_input_image_y, 1, 0.0f);
         best_theta.QuickAndDirtyWriteSlice(best_theta_output_file.ToStdString( ), 1, pixel_size);
+        sorted_images.ordered_theta.Resize(original_input_image_x, original_input_image_y, number_of_top_correlations_to_save, 0.0f);
+        sorted_images.ordered_theta.QuickAndDirtyWriteSlices("top_theta.mrc", 1, number_of_top_correlations_to_save, true, pixel_size);
         best_phi.Resize(original_input_image_x, original_input_image_y, 1, 0.0f);
         best_phi.QuickAndDirtyWriteSlice(best_phi_output_file.ToStdString( ), 1, pixel_size);
+        sorted_images.ordered_phi.Resize(original_input_image_x, original_input_image_y, number_of_top_correlations_to_save, 0.0f);
+        sorted_images.ordered_phi.QuickAndDirtyWriteSlices("top_phi.mrc", 1, number_of_top_correlations_to_save, true, pixel_size);
         best_defocus.Resize(original_input_image_x, original_input_image_y, 1, 0.0f);
         best_defocus.QuickAndDirtyWriteSlice(best_defocus_output_file.ToStdString( ), 1, pixel_size);
         best_pixel_size.Resize(original_input_image_x, original_input_image_y, 1, 0.0f);
@@ -1336,11 +1509,30 @@ bool MatchTemplateApp::DoCalculation( ) {
         best_defocus.Resize(trim_x, trim_y, 1, central_average);
         best_defocus.Resize(original_input_image_x, original_input_image_y, 1, central_average);
 
+        // TODO should process meta images slice by slice, but for now I only calculate the avg across all slices
+        central_average = sorted_images.ordered_cc.ReturnAverageOfRealValues(central_region, false);
+        sorted_images.ordered_cc.Resize(trim_x, trim_y, number_of_top_correlations_to_save, central_average);
+        sorted_images.ordered_cc.Resize(original_input_image_x, original_input_image_y, number_of_top_correlations_to_save, central_average);
+        // TODO should process meta images slice by slice, but for now I only calculate the avg across all slices
+        central_average = sorted_images.ordered_psi.ReturnAverageOfRealValues(central_region, false);
+        sorted_images.ordered_psi.Resize(trim_x, trim_y, number_of_top_correlations_to_save, central_average);
+        sorted_images.ordered_psi.Resize(original_input_image_x, original_input_image_y, number_of_top_correlations_to_save, central_average);
+        // TODO should process meta images slice by slice, but for now I only calculate the avg across all slices
+        central_average = sorted_images.ordered_theta.ReturnAverageOfRealValues(central_region, false);
+        sorted_images.ordered_theta.Resize(trim_x, trim_y, number_of_top_correlations_to_save, central_average);
+        sorted_images.ordered_theta.Resize(original_input_image_x, original_input_image_y, number_of_top_correlations_to_save, central_average);
+        // TODO should process meta images slice by slice, but for now I only calculate the avg across all slices
+        central_average = sorted_images.ordered_phi.ReturnAverageOfRealValues(central_region, false);
+        sorted_images.ordered_phi.Resize(trim_x, trim_y, number_of_top_correlations_to_save, central_average);
+        sorted_images.ordered_phi.Resize(original_input_image_x, original_input_image_y, number_of_top_correlations_to_save, central_average);
+
         // Make sure there is enough space allocated for all results
         number_of_result_floats += max_intensity_projection.real_memory_allocated * number_of_output_images;
         number_of_result_floats += histogram_number_of_points * sizeof(long) / sizeof(float); // histogram are longs
+        number_of_result_floats += sorted_images.ordered_cc.real_memory_allocated * number_of_additional_images_for_top_ccs;
 
         float* result = new float[number_of_result_floats];
+
         // Not zero floating this array since all additions are assignments. This can help to expose any indexing errors.
 
         result[0] = max_intensity_projection.logical_x_dimension;
@@ -1396,6 +1588,23 @@ bool MatchTemplateApp::DoCalculation( ) {
 
         for ( pixel_counter = 0; pixel_counter < histogram_number_of_points * 2; pixel_counter++ ) {
             result[result_array_counter] = pointer_to_histogram_data[pixel_counter];
+            result_array_counter++;
+        }
+
+        for ( pixel_counter = 0; pixel_counter < sorted_images.ordered_cc.real_memory_allocated; pixel_counter++ ) {
+            result[result_array_counter] = sorted_images.ordered_cc.real_values[pixel_counter];
+            result_array_counter++;
+        }
+        for ( pixel_counter = 0; pixel_counter < sorted_images.ordered_psi.real_memory_allocated; pixel_counter++ ) {
+            result[result_array_counter] = sorted_images.ordered_psi.real_values[pixel_counter];
+            result_array_counter++;
+        }
+        for ( pixel_counter = 0; pixel_counter < sorted_images.ordered_theta.real_memory_allocated; pixel_counter++ ) {
+            result[result_array_counter] = sorted_images.ordered_theta.real_values[pixel_counter];
+            result_array_counter++;
+        }
+        for ( pixel_counter = 0; pixel_counter < sorted_images.ordered_phi.real_memory_allocated; pixel_counter++ ) {
+            result[result_array_counter] = sorted_images.ordered_phi.real_values[pixel_counter];
             result_array_counter++;
         }
 
@@ -1472,6 +1681,11 @@ void MatchTemplateApp::MasterHandleProgramDefinedResult(float* result_array, lon
         Image theta_image;
         Image defocus_image;
         Image pixel_size_image;
+
+        Image tip_image;
+        Image top_psi_image;
+        Image top_theta_image;
+        Image top_phi_image;
 
         Image result_image;
         Image input_reconstruction;
@@ -1638,6 +1852,54 @@ void MatchTemplateApp::MasterHandleProgramDefinedResult(float* result_array, lon
         for ( int line_counter = 0; line_counter <= histogram_number_of_points; line_counter++ ) {
             expected_survival_histogram[line_counter] = (erfc((temp_float + histogram_step * float(line_counter)) / sqrtf(2.0f)) / 2.0f) * (aggregated_results[array_location].collated_data_array[0] * aggregated_results[array_location].collated_data_array[1] * aggregated_results[array_location].total_number_of_ccs);
         }
+
+        temp_image.Allocate(int(aggregated_results[array_location].collated_data_array[0]), int(aggregated_results[array_location].collated_data_array[1]), number_of_top_correlations_to_save, true);
+        for ( pixel_counter = 0; pixel_counter < int(result_array[2]) * number_of_top_correlations_to_save; pixel_counter++ ) {
+            temp_image.real_values[pixel_counter] = aggregated_results[array_location].collated_tip_data[pixel_counter];
+        }
+        tip_image.CopyFrom(&temp_image);
+
+        //temp_image.QuickAndDirtyWriteSlices(current_job_package.jobs[(aggregated_results[array_location].image_number - 1) * number_of_expected_results].arguments[42].ReturnStringArgument( ), 1, number_of_top_correlations_to_save);
+        temp_image.Deallocate( );
+
+        // save meta data - psi
+        temp_image.Allocate(int(aggregated_results[array_location].collated_data_array[0]), int(aggregated_results[array_location].collated_data_array[1]), number_of_top_correlations_to_save, true);
+        for ( pixel_counter = 0; pixel_counter < int(result_array[2]) * number_of_top_correlations_to_save; pixel_counter++ ) {
+            temp_image.real_values[pixel_counter] = aggregated_results[array_location].collated_top_psi[pixel_counter];
+        }
+        top_psi_image.CopyFrom(&temp_image);
+
+        //temp_image.QuickAndDirtyWriteSlices(current_job_package.jobs[(aggregated_results[array_location].image_number - 1) * number_of_expected_results].arguments[43].ReturnStringArgument( ), 1, number_of_top_correlations_to_save);
+        temp_image.Deallocate( );
+
+        // save meta data - theta
+        temp_image.Allocate(int(aggregated_results[array_location].collated_data_array[0]), int(aggregated_results[array_location].collated_data_array[1]), number_of_top_correlations_to_save, true);
+        for ( pixel_counter = 0; pixel_counter < int(result_array[2]) * number_of_top_correlations_to_save; pixel_counter++ ) {
+            temp_image.real_values[pixel_counter] = aggregated_results[array_location].collated_top_theta[pixel_counter];
+        }
+        top_theta_image.CopyFrom(&temp_image);
+
+        //temp_image.QuickAndDirtyWriteSlices(current_job_package.jobs[(aggregated_results[array_location].image_number - 1) * number_of_expected_results].arguments[44].ReturnStringArgument( ), 1, number_of_top_correlations_to_save);
+        temp_image.Deallocate( );
+
+        // save meta data - phi
+        temp_image.Allocate(int(aggregated_results[array_location].collated_data_array[0]), int(aggregated_results[array_location].collated_data_array[1]), number_of_top_correlations_to_save, true);
+        for ( pixel_counter = 0; pixel_counter < int(result_array[2]) * number_of_top_correlations_to_save; pixel_counter++ ) {
+            temp_image.real_values[pixel_counter] = aggregated_results[array_location].collated_top_phi[pixel_counter];
+        }
+        top_phi_image.CopyFrom(&temp_image);
+
+        //  temp_image.QuickAndDirtyWriteSlices(current_job_package.jobs[(aggregated_results[array_location].image_number - 1) * number_of_expected_results].arguments[45].ReturnStringArgument( ), 1, number_of_top_correlations_to_save);
+        temp_image.Deallocate( );
+
+        // x,y locations may have different orderings so need to be sorted
+        SortedTemplateResult sorted_aggregated_result(number_of_top_correlations_to_save);
+        sorted_aggregated_result.SortResultUsingCorrelations(&tip_image, &top_psi_image, &top_theta_image, &top_phi_image);
+        // todo: update output filenames
+        sorted_aggregated_result.ordered_cc.QuickAndDirtyWriteSlices("sorted_tip.mrc", 1, number_of_top_correlations_to_save);
+        sorted_aggregated_result.ordered_psi.QuickAndDirtyWriteSlices("sorted_psi.mrc", 1, number_of_top_correlations_to_save);
+        sorted_aggregated_result.ordered_theta.QuickAndDirtyWriteSlices("sorted_theta.mrc", 1, number_of_top_correlations_to_save);
+        sorted_aggregated_result.ordered_phi.QuickAndDirtyWriteSlices("sorted_phi.mrc", 1, number_of_top_correlations_to_save);
 
         // calculate the expected threshold (from peter's paper)
         const float CCG_NOISE_STDDEV = 1.0;
@@ -1834,6 +2096,10 @@ AggregatedTemplateResult::AggregatedTemplateResult( ) {
     collated_pixel_sums        = NULL;
     collated_pixel_square_sums = NULL;
     collated_histogram_data    = NULL;
+    collated_tip_data          = NULL;
+    collated_top_psi           = NULL;
+    collated_top_theta         = NULL;
+    collated_top_phi           = NULL;
 }
 
 AggregatedTemplateResult::~AggregatedTemplateResult( ) {
@@ -1843,7 +2109,8 @@ AggregatedTemplateResult::~AggregatedTemplateResult( ) {
 
 void AggregatedTemplateResult::AddResult(float* result_array, long array_size, int result_number, int number_of_expected_results) {
 
-    int offset = number_of_meta_data_values;
+    int offset      = number_of_meta_data_values;
+    int offset_meta = offset + int(result_array[2]) * number_of_output_images + int(result_array[3]) * 2; // offset + regular images * 8 + number of histogram points ( twice in space (int -> long) )
 
     if ( collated_data_array == NULL ) {
         collated_data_array = new float[array_size];
@@ -1870,6 +2137,10 @@ void AggregatedTemplateResult::AddResult(float* result_array, long array_size, i
         collated_data_array[3] = result_array[3];
 
         collated_data_array[5] = result_array[5];
+        collated_tip_data      = &collated_data_array[offset_meta + int(result_array[2]) * number_of_top_correlations_to_save * 0];
+        collated_top_psi       = &collated_data_array[offset_meta + int(result_array[2]) * number_of_top_correlations_to_save * 1];
+        collated_top_theta     = &collated_data_array[offset_meta + int(result_array[2]) * number_of_top_correlations_to_save * 2];
+        collated_top_phi       = &collated_data_array[offset_meta + int(result_array[2]) * number_of_top_correlations_to_save * 3];
     }
 
     total_number_of_ccs += result_array[4];
@@ -1887,6 +2158,83 @@ void AggregatedTemplateResult::AddResult(float* result_array, long array_size, i
 
     long pixel_counter;
     long result_array_counter;
+
+    int   min_value_index_at_each_pixel = number_of_top_correlations_to_save - 1;
+    float min_value_at_each_pixel       = FLT_MAX;
+
+    //cannot use arrays due to unknown padding jump values -> create new temp images instead to update pixel values
+    Image temp_worker_tip, temp_master_tip;
+    Image temp_worker_top_psi, temp_master_top_psi;
+    Image temp_worker_top_theta, temp_master_top_theta;
+    Image temp_worker_top_phi, temp_master_top_phi;
+
+    temp_worker_tip.Allocate(int(result_array[0]), int(result_array[1]), number_of_top_correlations_to_save, true);
+    temp_master_tip.Allocate(int(result_array[0]), int(result_array[1]), number_of_top_correlations_to_save, true);
+    temp_worker_top_psi.Allocate(int(result_array[0]), int(result_array[1]), number_of_top_correlations_to_save, true);
+    temp_master_top_psi.Allocate(int(result_array[0]), int(result_array[1]), number_of_top_correlations_to_save, true);
+    temp_worker_top_theta.Allocate(int(result_array[0]), int(result_array[1]), number_of_top_correlations_to_save, true);
+    temp_master_top_theta.Allocate(int(result_array[0]), int(result_array[1]), number_of_top_correlations_to_save, true);
+    temp_worker_top_phi.Allocate(int(result_array[0]), int(result_array[1]), number_of_top_correlations_to_save, true);
+    temp_master_top_phi.Allocate(int(result_array[0]), int(result_array[1]), number_of_top_correlations_to_save, true);
+
+    // master converts collated array to image
+    // worker converts incoming array to image
+    for ( long counter = 0; counter < int(result_array[2]) * number_of_top_correlations_to_save; counter++ ) {
+        temp_worker_tip.real_values[counter] = result_array[offset_meta + int(result_array[2]) * number_of_top_correlations_to_save * 0 + counter];
+        temp_master_tip.real_values[counter] = collated_tip_data[counter];
+
+        temp_worker_top_psi.real_values[counter] = result_array[offset_meta + int(result_array[2]) * number_of_top_correlations_to_save * 1 + counter];
+        temp_master_top_psi.real_values[counter] = collated_top_psi[counter];
+
+        temp_worker_top_theta.real_values[counter] = result_array[offset_meta + int(result_array[2]) * number_of_top_correlations_to_save * 2 + counter];
+        temp_master_top_theta.real_values[counter] = collated_top_theta[counter];
+
+        temp_worker_top_phi.real_values[counter] = result_array[offset_meta + int(result_array[2]) * number_of_top_correlations_to_save * 3 + counter];
+        temp_master_top_phi.real_values[counter] = collated_top_phi[counter];
+    }
+
+    // compare pixel values between master and worker
+    for ( int current_y = 0; current_y < int(result_array[1]); current_y++ ) {
+        for ( int current_x = 0; current_x < int(result_array[0]); current_x++ ) {
+
+            // for each x,y location, find smallest value and corresponding z-index
+            for ( int k = 0; k < temp_worker_tip.logical_z_dimension; k++ ) {
+
+                min_value_at_each_pixel = FLT_MAX;
+                for ( int current_z = 0; current_z < temp_master_tip.logical_z_dimension; current_z++ ) {
+                    if ( min_value_at_each_pixel > temp_master_tip.ReturnRealPixelFromPhysicalCoord(current_x, current_y, current_z) ) {
+                        min_value_at_each_pixel       = temp_master_tip.ReturnRealPixelFromPhysicalCoord(current_x, current_y, current_z);
+                        min_value_index_at_each_pixel = current_z;
+                    }
+                }
+
+                // if worker > master update this x,y,z location
+                if ( temp_worker_tip.ReturnRealPixelFromPhysicalCoord(current_x, current_y, k) > min_value_at_each_pixel ) {
+                    temp_master_tip.ReplaceRealPixelAtPhysicalCoord(temp_worker_tip.ReturnRealPixelFromPhysicalCoord(current_x, current_y, k), current_x, current_y, min_value_index_at_each_pixel);
+
+                    temp_master_top_psi.ReplaceRealPixelAtPhysicalCoord(temp_worker_top_psi.ReturnRealPixelFromPhysicalCoord(current_x, current_y, k), current_x, current_y, min_value_index_at_each_pixel);
+
+                    temp_master_top_theta.ReplaceRealPixelAtPhysicalCoord(temp_worker_top_theta.ReturnRealPixelFromPhysicalCoord(current_x, current_y, k), current_x, current_y, min_value_index_at_each_pixel);
+
+                    temp_master_top_phi.ReplaceRealPixelAtPhysicalCoord(temp_worker_top_phi.ReturnRealPixelFromPhysicalCoord(current_x, current_y, k), current_x, current_y, min_value_index_at_each_pixel);
+                }
+            }
+
+            //if ( current_x < 5 and current_y < 5 )
+            //    //at the end of this worker report current status
+            //    for ( int k = 0; k < number_of_top_correlations_to_save; k++ ) {
+            //        wxPrintf("updated list from worker %i : pixel @ %i %i %i = %f @ %f %f %f\n", worker_id, current_x, current_y, k, temp_master_tip.ReturnRealPixelFromPhysicalCoord(current_x, current_y, k), temp_master_top_psi.ReturnRealPixelFromPhysicalCoord(current_x, current_y, k), temp_master_top_theta.ReturnRealPixelFromPhysicalCoord(current_x, current_y, k), temp_master_top_phi.ReturnRealPixelFromPhysicalCoord(current_x, current_y, k));
+            //    }
+        }
+    }
+
+    // put updated master result into collated_data_array (will sort later in MasterHandleProgramDefinedResult)
+    for ( pixel_counter = 0; pixel_counter < int(result_array[2]) * number_of_top_correlations_to_save; pixel_counter++ ) {
+        collated_tip_data[pixel_counter]  = temp_master_tip.real_values[pixel_counter];
+        collated_top_psi[pixel_counter]   = temp_master_top_psi.real_values[pixel_counter];
+        collated_top_theta[pixel_counter] = temp_master_top_theta.real_values[pixel_counter];
+        collated_top_phi[pixel_counter]   = temp_master_top_phi.real_values[pixel_counter];
+    }
 
     // handle the images..
 
@@ -1919,4 +2267,42 @@ void AggregatedTemplateResult::AddResult(float* result_array, long array_size, i
 
     number_of_received_results++;
     wxPrintf("Received %i of %i results\n", number_of_received_results, number_of_expected_results);
+}
+
+SortedTemplateResult::SortedTemplateResult(int K) {
+    number_of_ccs_to_sort = K;
+}
+
+void SortedTemplateResult::SortResultUsingCorrelations(Image* cc, Image* psi, Image* theta, Image* phi) {
+    ordered_cc.CopyFrom(cc);
+    ordered_psi.CopyFrom(psi);
+    ordered_theta.CopyFrom(theta);
+    ordered_phi.CopyFrom(phi);
+    for ( int current_y = 0; current_y < ordered_cc.logical_y_dimension; current_y++ ) {
+        for ( int current_x = 0; current_x < ordered_cc.logical_x_dimension; current_x++ ) {
+
+            float arr_of_tip[number_of_ccs_to_sort];
+            for ( int current_z = 0; current_z < number_of_ccs_to_sort; current_z++ ) {
+                arr_of_tip[current_z] = cc->ReturnRealPixelFromPhysicalCoord(current_x, current_y, current_z);
+            }
+
+            struct PixelOrder objects[number_of_ccs_to_sort];
+            for ( int i = 0; i < number_of_ccs_to_sort; i++ ) {
+                objects[i].pixel_value                = arr_of_tip[i];
+                objects[i].pixel_index_in_z_dimension = i;
+            }
+            qsort(objects, number_of_ccs_to_sort, sizeof(objects[0]), compare_pixel_value);
+            //for ( int i = 0; i < 5; i++ ) {
+            //     wxPrintf("%f %i\n", objects[i].pixel_value, objects[i].pixel_index_in_z_dimension);
+            //}
+
+            // sort tmp_top_intensity_projection into new order
+            for ( int i = 0; i < number_of_ccs_to_sort; i++ ) {
+                ordered_cc.ReplaceRealPixelAtPhysicalCoord(cc->ReturnRealPixelFromPhysicalCoord(current_x, current_y, objects[i].pixel_index_in_z_dimension), current_x, current_y, i);
+                ordered_psi.ReplaceRealPixelAtPhysicalCoord(psi->ReturnRealPixelFromPhysicalCoord(current_x, current_y, objects[i].pixel_index_in_z_dimension), current_x, current_y, i);
+                ordered_theta.ReplaceRealPixelAtPhysicalCoord(theta->ReturnRealPixelFromPhysicalCoord(current_x, current_y, objects[i].pixel_index_in_z_dimension), current_x, current_y, i);
+                ordered_phi.ReplaceRealPixelAtPhysicalCoord(phi->ReturnRealPixelFromPhysicalCoord(current_x, current_y, objects[i].pixel_index_in_z_dimension), current_x, current_y, i);
+            }
+        }
+    }
 }

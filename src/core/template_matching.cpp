@@ -45,6 +45,10 @@ TemplateMatchJobResults::TemplateMatchJobResults( ) {
     projection_result_filename = "";
     avg_filename               = "";
     std_filename               = "";
+    //  tip_filename               = "";
+    //  top_psi_filename           = "";
+    // top_theta_filename         = "";
+    //  top_phi_filename           = "";
 
     refinement_threshold            = 0.0f;
     used_threshold                  = 0.0f;
