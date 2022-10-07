@@ -184,6 +184,11 @@ void MatchTemplateApp::DoInteractiveUserInput( ) {
     wxString correlation_avg_output_file;
     wxString scaled_mip_output_file;
 
+    wxString tip_output_file;
+    wxString top_psi_output_file;
+    wxString top_theta_output_file;
+    wxString top_phi_output_file;
+
     float pixel_size              = 1.0f;
     float voltage_kV              = 300.0f;
     float spherical_aberration_mm = 2.7f;
@@ -248,6 +253,10 @@ void MatchTemplateApp::DoInteractiveUserInput( ) {
     use_gpu_input = my_input->GetYesNoFromUser("Use GPU", "Offload expensive calcs to GPU", "No");
     max_threads   = my_input->GetIntFromUser("Max. threads to use for calculation", "when threading, what is the max threads to run", "1", 1);
 #endif
+    tip_output_file       = my_input->GetFilenameFromUser("Output TIP file", "The file for saving the top intensity projection images divided by correlation variance", "tip.mrc", false);
+    top_psi_output_file   = my_input->GetFilenameFromUser("Output top psi file", "The file for saving the top psi images", "top_psi.mrc", false);
+    top_theta_output_file = my_input->GetFilenameFromUser("Output top theta file", "The file for saving the top psi images", "top_theta.mrc", false);
+    top_phi_output_file   = my_input->GetFilenameFromUser("Output top phi file", "The file for saving the top psi images", "top_phi.mrc", false);
 
     int   first_search_position           = -1;
     int   last_search_position            = -1;
@@ -260,7 +269,7 @@ void MatchTemplateApp::DoInteractiveUserInput( ) {
 
     delete my_input;
 
-    my_current_job.ManualSetArguments("ttffffffffffifffffbfftttttttttftiiiitttfbi", input_search_images.ToUTF8( ).data( ),
+    my_current_job.ManualSetArguments("ttffffffffffifffffbfftttttttttftiiiitttfbitttt", input_search_images.ToUTF8( ).data( ),
                                       input_reconstruction.ToUTF8( ).data( ),
                                       pixel_size,
                                       voltage_kV,
@@ -301,7 +310,11 @@ void MatchTemplateApp::DoInteractiveUserInput( ) {
                                       result_filename.ToUTF8( ).data( ),
                                       min_peak_radius,
                                       use_gpu_input,
-                                      max_threads);
+                                      max_threads,
+                                      tip_output_file.ToUTF8( ).data( ),
+                                      top_psi_output_file.ToUTF8( ).data( ),
+                                      top_theta_output_file.ToUTF8( ).data( ),
+                                      top_phi_output_file.ToUTF8( ).data( ));
 }
 
 // override the do calculation method which will be what is actually run..
@@ -411,6 +424,10 @@ bool MatchTemplateApp::DoCalculation( ) {
     float    min_peak_radius                 = my_current_job.arguments[39].ReturnFloatArgument( );
     bool     use_gpu                         = my_current_job.arguments[40].ReturnBoolArgument( );
     int      max_threads                     = my_current_job.arguments[41].ReturnIntegerArgument( );
+    wxString tip_output_file                 = my_current_job.arguments[42].ReturnStringArgument( );
+    wxString top_psi_output_file             = my_current_job.arguments[43].ReturnStringArgument( );
+    wxString top_theta_output_file           = my_current_job.arguments[44].ReturnStringArgument( );
+    wxString top_phi_output_file             = my_current_job.arguments[45].ReturnStringArgument( );
 
     if ( is_running_locally == false )
         max_threads = number_of_threads_requested_on_command_line; // OVERRIDE FOR THE GUI, AS IT HAS TO BE SET ON THE COMMAND LINE...
@@ -1281,7 +1298,7 @@ bool MatchTemplateApp::DoCalculation( ) {
         }
 
         max_intensity_projection.MultiplyByConstant((float)sqrt_input_pixels);
-        top_intensity_projection.MultiplyByConstant((float)sqrt_input_pixels); //TODO is local run fully debugged?
+        top_intensity_projection.MultiplyByConstant((float)sqrt_input_pixels);
         //        correlation_pixel_sum.MultiplyByConstant(sqrtf(max_intensity_projection.logical_x_dimension * max_intensity_projection.logical_y_dimension));
         //        correlation_pixel_sum_of_squares.MultiplyByConstant(max_intensity_projection.logical_x_dimension * max_intensity_projection.logical_y_dimension);
 
@@ -1349,19 +1366,19 @@ bool MatchTemplateApp::DoCalculation( ) {
         correlation_pixel_sum_of_squares_image.Resize(original_input_image_x, original_input_image_y, 1, correlation_pixel_sum_of_squares_image.ReturnAverageOfRealValuesOnEdges( ));
         correlation_pixel_sum_of_squares_image.QuickAndDirtyWriteSlice(correlation_std_output_file.ToStdString( ), 1, pixel_size);
         sorted_images.ordered_cc.Resize(original_input_image_x, original_input_image_y, number_of_top_correlations_to_save, 0.0f);
-        sorted_images.ordered_cc.QuickAndDirtyWriteSlices("tip.mrc", 1, number_of_top_correlations_to_save, true, pixel_size); // output filenames have not been incorporated into user inputs yet
+        sorted_images.ordered_cc.QuickAndDirtyWriteSlices(tip_output_file.ToStdString( ), 1, number_of_top_correlations_to_save, true, pixel_size);
         best_psi.Resize(original_input_image_x, original_input_image_y, 1, 0.0f);
         best_psi.QuickAndDirtyWriteSlice(best_psi_output_file.ToStdString( ), 1, pixel_size);
         sorted_images.ordered_psi.Resize(original_input_image_x, original_input_image_y, number_of_top_correlations_to_save, 0.0f);
-        sorted_images.ordered_psi.QuickAndDirtyWriteSlices("top_psi.mrc", 1, number_of_top_correlations_to_save, true, pixel_size);
+        sorted_images.ordered_psi.QuickAndDirtyWriteSlices(top_psi_output_file.ToStdString( ), 1, number_of_top_correlations_to_save, true, pixel_size);
         best_theta.Resize(original_input_image_x, original_input_image_y, 1, 0.0f);
         best_theta.QuickAndDirtyWriteSlice(best_theta_output_file.ToStdString( ), 1, pixel_size);
         sorted_images.ordered_theta.Resize(original_input_image_x, original_input_image_y, number_of_top_correlations_to_save, 0.0f);
-        sorted_images.ordered_theta.QuickAndDirtyWriteSlices("top_theta.mrc", 1, number_of_top_correlations_to_save, true, pixel_size);
+        sorted_images.ordered_theta.QuickAndDirtyWriteSlices(top_theta_output_file.ToStdString( ), 1, number_of_top_correlations_to_save, true, pixel_size);
         best_phi.Resize(original_input_image_x, original_input_image_y, 1, 0.0f);
         best_phi.QuickAndDirtyWriteSlice(best_phi_output_file.ToStdString( ), 1, pixel_size);
         sorted_images.ordered_phi.Resize(original_input_image_x, original_input_image_y, number_of_top_correlations_to_save, 0.0f);
-        sorted_images.ordered_phi.QuickAndDirtyWriteSlices("top_phi.mrc", 1, number_of_top_correlations_to_save, true, pixel_size);
+        sorted_images.ordered_phi.QuickAndDirtyWriteSlices(top_phi_output_file.ToStdString( ), 1, number_of_top_correlations_to_save, true, pixel_size);
         best_defocus.Resize(original_input_image_x, original_input_image_y, 1, 0.0f);
         best_defocus.QuickAndDirtyWriteSlice(best_defocus_output_file.ToStdString( ), 1, pixel_size);
         best_pixel_size.Resize(original_input_image_x, original_input_image_y, 1, 0.0f);
@@ -1479,7 +1496,7 @@ bool MatchTemplateApp::DoCalculation( ) {
         best_defocus.Resize(trim_x, trim_y, 1, central_average);
         best_defocus.Resize(original_input_image_x, original_input_image_y, 1, central_average);
 
-        // TODO should process meta images slice by slice, but for now I only calculate the avg across all slices
+        // TODO should process meta images slice by slice, but for now only calculate the avg across all slices
         central_average = sorted_images.ordered_cc.ReturnAverageOfRealValues(central_region, false);
         sorted_images.ordered_cc.Resize(trim_x, trim_y, number_of_top_correlations_to_save, central_average);
         sorted_images.ordered_cc.Resize(original_input_image_x, original_input_image_y, number_of_top_correlations_to_save, central_average);
@@ -1865,11 +1882,11 @@ void MatchTemplateApp::MasterHandleProgramDefinedResult(float* result_array, lon
         // x,y locations may have different orderings so need to be sorted
         SortedTemplateResult sorted_aggregated_result(number_of_top_correlations_to_save);
         sorted_aggregated_result.SortResultUsingCorrelations(&tip_image, &top_psi_image, &top_theta_image, &top_phi_image);
-        // todo: update output filenames
-        sorted_aggregated_result.ordered_cc.QuickAndDirtyWriteSlices("sorted_tip.mrc", 1, number_of_top_correlations_to_save);
-        sorted_aggregated_result.ordered_psi.QuickAndDirtyWriteSlices("sorted_psi.mrc", 1, number_of_top_correlations_to_save);
-        sorted_aggregated_result.ordered_theta.QuickAndDirtyWriteSlices("sorted_theta.mrc", 1, number_of_top_correlations_to_save);
-        sorted_aggregated_result.ordered_phi.QuickAndDirtyWriteSlices("sorted_phi.mrc", 1, number_of_top_correlations_to_save);
+
+        sorted_aggregated_result.ordered_cc.QuickAndDirtyWriteSlices(current_job_package.jobs[(aggregated_results[array_location].image_number - 1) * number_of_expected_results].arguments[42].ReturnStringArgument( ), 1, number_of_top_correlations_to_save);
+        sorted_aggregated_result.ordered_psi.QuickAndDirtyWriteSlices(current_job_package.jobs[(aggregated_results[array_location].image_number - 1) * number_of_expected_results].arguments[43].ReturnStringArgument( ), 1, number_of_top_correlations_to_save);
+        sorted_aggregated_result.ordered_theta.QuickAndDirtyWriteSlices(current_job_package.jobs[(aggregated_results[array_location].image_number - 1) * number_of_expected_results].arguments[44].ReturnStringArgument( ), 1, number_of_top_correlations_to_save);
+        sorted_aggregated_result.ordered_phi.QuickAndDirtyWriteSlices(current_job_package.jobs[(aggregated_results[array_location].image_number - 1) * number_of_expected_results].arguments[45].ReturnStringArgument( ), 1, number_of_top_correlations_to_save);
 
         // calculate the expected threshold (from peter's paper)
         const float CCG_NOISE_STDDEV = 1.0;

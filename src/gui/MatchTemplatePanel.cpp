@@ -796,17 +796,17 @@ void MatchTemplatePanel::StartEstimationClick(wxCommandEvent& event) {
         wxString correlation_std_output_file = main_frame->current_project.template_matching_asset_directory.GetFullPath( );
         correlation_std_output_file += wxString::Format("/%s_std_%i_%i.mrc", current_image->filename.GetName( ), current_image->asset_id, number_of_previous_template_matches);
 
-        //    wxString tip_output_file = main_frame->current_project.template_matching_asset_directory.GetFullPath( );
-        //    tip_output_file += wxString::Format("/%s_tip_%i_%i.mrc", current_image->filename.GetName( ), current_image->asset_id, number_of_previous_template_matches);
+        wxString tip_output_file = main_frame->current_project.template_matching_asset_directory.GetFullPath( );
+        tip_output_file += wxString::Format("/%s_tip_%i_%i.mrc", current_image->filename.GetName( ), current_image->asset_id, number_of_previous_template_matches);
 
-        //    wxString top_psi_output_file = main_frame->current_project.template_matching_asset_directory.GetFullPath( );
-        //    top_psi_output_file += wxString::Format("/%s_top_psi_%i_%i.mrc", current_image->filename.GetName( ), current_image->asset_id, number_of_previous_template_matches);
+        wxString top_psi_output_file = main_frame->current_project.template_matching_asset_directory.GetFullPath( );
+        top_psi_output_file += wxString::Format("/%s_top_psi_%i_%i.mrc", current_image->filename.GetName( ), current_image->asset_id, number_of_previous_template_matches);
 
-        //    wxString top_theta_output_file = main_frame->current_project.template_matching_asset_directory.GetFullPath( );
-        //    top_theta_output_file += wxString::Format("/%s_top_theta_%i_%i.mrc", current_image->filename.GetName( ), current_image->asset_id, number_of_previous_template_matches);
+        wxString top_theta_output_file = main_frame->current_project.template_matching_asset_directory.GetFullPath( );
+        top_theta_output_file += wxString::Format("/%s_top_theta_%i_%i.mrc", current_image->filename.GetName( ), current_image->asset_id, number_of_previous_template_matches);
 
-        //    wxString top_phi_output_file = main_frame->current_project.template_matching_asset_directory.GetFullPath( );
-        //    top_phi_output_file += wxString::Format("/%s_top_phi_%i_%i.mrc", current_image->filename.GetName( ), current_image->asset_id, number_of_previous_template_matches);
+        wxString top_phi_output_file = main_frame->current_project.template_matching_asset_directory.GetFullPath( );
+        top_phi_output_file += wxString::Format("/%s_top_phi_%i_%i.mrc", current_image->filename.GetName( ), current_image->asset_id, number_of_previous_template_matches);
 
         //		wxString correlation_std_output_file = "/dev/null";
         current_orientation_counter = 0;
@@ -853,10 +853,10 @@ void MatchTemplatePanel::StartEstimationClick(wxCommandEvent& event) {
         temp_result.projection_result_filename      = output_result_file;
         temp_result.avg_filename                    = correlation_avg_output_file;
         temp_result.std_filename                    = correlation_std_output_file;
-        //    temp_result.tip_filename                    = tip_output_file;
-        //    temp_result.top_psi_filename                = top_psi_output_file;
-        //    temp_result.top_theta_filename              = top_theta_output_file;
-        //    temp_result.top_phi_filename                = top_phi_output_file;
+        temp_result.tip_filename                    = tip_output_file;
+        temp_result.top_psi_filename                = top_psi_output_file;
+        temp_result.top_theta_filename              = top_theta_output_file;
+        temp_result.top_phi_filename                = top_phi_output_file;
 
         cached_results.Add(temp_result);
 
@@ -887,7 +887,7 @@ void MatchTemplatePanel::StartEstimationClick(wxCommandEvent& event) {
 
             // !!!!!!!!!!!!! add job names for meta data
 
-            current_job_package.AddJob("ttffffffffffifffffbfftttttttttftiiiitttfbi", input_search_image.ToUTF8( ).data( ),
+            current_job_package.AddJob("ttffffffffffifffffbfftttttttttftiiiitttfbitttt", input_search_image.ToUTF8( ).data( ),
                                        input_reconstruction.ToUTF8( ).data( ),
                                        pixel_size,
                                        voltage_kV,
@@ -928,11 +928,11 @@ void MatchTemplatePanel::StartEstimationClick(wxCommandEvent& event) {
                                        output_result_file.ToUTF8( ).data( ),
                                        min_peak_radius,
                                        use_gpu,
-                                       max_threads);
-            //   tip_output_file.ToUTF8( ).data( ), //42
-            //   top_psi_output_file.ToUTF8( ).data( ),
-            //   top_theta_output_file.ToUTF8( ).data( ),
-            //   top_phi_output_file.ToUTF8( ).data( ));
+                                       max_threads,
+                                       tip_output_file.ToUTF8( ).data( ), //42
+                                       top_psi_output_file.ToUTF8( ).data( ),
+                                       top_theta_output_file.ToUTF8( ).data( ),
+                                       top_phi_output_file.ToUTF8( ).data( ));
         }
 
         delete current_image_euler_search;
