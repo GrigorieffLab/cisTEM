@@ -1056,6 +1056,7 @@ void SimulateApp::DoInteractiveUserInput( ) {
         if ( number_of_frames - dose_per_frame < 1 ) {
             number_of_frames++;
         }
+        wxPrintf("number of frames %f\n", number_of_frames);
     }
 
     delete my_input;
@@ -1676,7 +1677,7 @@ void SimulateApp::probability_density_2d(PDB* pdb_ensemble, int time_step) {
                 timer.lap("Shake H20");
             }
             else if ( DO_SOLVENT && ! do3d && ! DO_PHASE_PLATE ) {
-
+                // shake water position in every frame
                 timer.start("Shake H20");
                 water_box.ShakeWaters3d(this->number_of_threads);
                 timer.lap("Shake H20");
@@ -1865,13 +1866,15 @@ void SimulateApp::probability_density_2d(PDB* pdb_ensemble, int time_step) {
 
                 timer.start("Calc Atoms");
                 if ( ! DO_PHASE_PLATE ) {
+                    wxPrintf(" simulate template - calculating potentials...\n");
                     this->calc_scattering_potential(&current_specimen, &scattering_slab, &inelastic_slab, &distance_slab, rotate_waters, rotated_oZ, slabIDX_start, slabIDX_end, iSlab);
                 }
                 timer.lap("Calc Atoms");
+                //distance_slab.QuickAndDirtyWriteSlices(wxString::Format("distance_slab_3d_slab_%i.mrc", iSlab).ToStdString( ), 1, distance_slab.logical_z_dimension);
+                //scattering_slab.QuickAndDirtyWriteSlices(wxString::Format("scattering_slab_3d_slab_%i.mrc", iSlab).ToStdString( ), 1, scattering_slab.logical_z_dimension);
 
                 ////////////////////
                 if ( do3d ) {
-
                     int  iPot;
                     long current_pixel;
                     bool testHoles = false;
@@ -1894,11 +1897,14 @@ void SimulateApp::probability_density_2d(PDB* pdb_ensemble, int time_step) {
                         float current_weight = 1.0f;
                         for ( int iWater = 0; iWater < projected_water[0].real_memory_allocated; iWater++ ) {
                             scattering_per_water += projected_water[0].real_values[iWater];
-                        }
+                        } // 0.161257 VA3/water
+                        // 0.031422 water/A3
+                        // 0.161257 / 0.031422 = 5.13 VA3/water * water/A3 = 5.13 V
+                        // scattering_per_water is the total scattering from one water integrated from x,y,z
                         float waters_per_ang_cubed = 0.94 * 0.6022140857 / 18.01528; // from water.cpp where 0.94 is a define for water density and 18 is mw
 
                         avg_scattering_per_voxel = scattering_per_water * waters_per_ang_cubed * (this->wanted_pixel_size * this->wanted_pixel_size_sq);
-
+                        wxPrintf("scattering_per_water = %f # waters_per_ang_cubed = %f avg_scattering_per_voxel = %f\n", scattering_per_water, waters_per_ang_cubed, avg_scattering_per_voxel);
                         float taper_from = 4.0; // distance form which to taper off the constant water shell
                         for ( long current_pixel = 0; current_pixel < distance_slab.real_memory_allocated; current_pixel++ ) {
                             if ( distance_slab.real_values[current_pixel] < DISTANCE_INIT ) {
@@ -1907,11 +1913,12 @@ void SimulateApp::probability_density_2d(PDB* pdb_ensemble, int time_step) {
                                     distance_slab.real_values[current_pixel] = return_hydration_weight_tapered(taper_from, current_weight) * avg_scattering_per_voxel;
                                 }
                                 else {
+                                    //wxPrintf("current_weight = %f density F(r) = %f\n", current_weight, return_hydration_weight(current_weight));
                                     distance_slab.real_values[current_pixel] = return_hydration_weight(current_weight) * avg_scattering_per_voxel;
                                 }
                             }
                             else {
-                                if ( water_shell_only ) {
+                                if ( water_shell_only ) { //if water shell then no water potential far away
                                     distance_slab.real_values[current_pixel] = 0.0f;
                                 }
                                 else {
@@ -1919,18 +1926,20 @@ void SimulateApp::probability_density_2d(PDB* pdb_ensemble, int time_step) {
                                 }
                             }
                         }
-
+                        distance_slab.QuickAndDirtyWriteSlices("water_potential_slab.mrc", 1, distance_slab.logical_z_dimension);
                         if ( bf > 0 ) {
                             distance_slab.ForwardFFT(true);
                             distance_slab.ApplyBFactor(this->bf / wanted_pixel_size_sq);
                             distance_slab.BackwardFFT( );
                         }
+                        wxPrintf("bfactor = %f\n", this->bf);
                         if ( DO_PRINT ) {
                             wxPrintf("\n\n\t\tMultiplying distance slab by wgt %4.4e\n\n", wgt);
                         }
-
+                        // distance_slab.QuickAndDirtyWriteSlices("water_potential_slab_after_bfactor.mrc", 1, distance_slab.logical_z_dimension);
                         distance_slab.MultiplyByConstant(this->wgt);
                         scattering_slab.AddImage(&distance_slab);
+                        //scattering_slab.QuickAndDirtyWriteSlices("scattering_slab_added_water.mrc", 1, distance_slab.logical_z_dimension);
                     }
 
                     if ( testHoles ) {
@@ -2122,7 +2131,7 @@ void SimulateApp::probability_density_2d(PDB* pdb_ensemble, int time_step) {
 #pragma omp parallel for num_threads(this->number_of_threads)
                         for ( long pixel_counter = 0; pixel_counter < distance_slab.real_memory_allocated; pixel_counter++ ) {
                             float current_weight = distance_slab.real_values[pixel_counter];
-                            if ( current_weight < DISTANCE_INIT ) {
+                            if ( current_weight > DISTANCE_INIT ) { // should it be >?
                                 water_mask_slab.real_values[pixel_counter] = 1.0f;
                             }
                             else {
@@ -3215,6 +3224,8 @@ void SimulateApp::fill_water_potential(const PDB* current_specimen, Image* scatt
 #pragma omp atomic update
                                 projected_water_atoms.real_values[projected_water_atoms.ReturnReal1DAddressFromPhysicalCoord(indX, indY, 0)] +=
                                         (current_weight * this->projected_water[iSubPixLinearIndex].ReturnRealPixelFromPhysicalCoord(sx, sy, 0)); // TODO could I land out of bounds?] += projected_water_atoms[iSubPixLinearIndex].real_values[iWater];
+                                //select projected water potential from library of different subpixel offset and add to the coordinates that this water affects
+
                                 if ( ReturnThreadNumberOfCurrentThread( ) == 0 )
                                     timer.lap("omp");
                             }
@@ -3261,8 +3272,14 @@ void SimulateApp::fill_water_potential(const PDB* current_specimen, Image* scatt
         tmpPrj[0].SetToConstant(0.0f);
         this->project(water_mask_slab, tmpPrj, 0);
         tmpPrj->DivideByConstant((float)water_mask_slab->logical_z_dimension);
+        if ( iSlab == 25 ) {
+            water_mask_slab->QuickAndDirtyWriteSlices(wxString::Format("water_mask_slab_%i.mrc", iSlab).ToStdString( ), 1, water_mask_slab->logical_z_dimension);
+            tmpPrj[0].QuickAndDirtyWriteSlice("weighting_of_water_slab25.mrc", 1, true);
+        }
         float mean_water_value = projected_water_atoms.ReturnAverageOfRealValues(-0.0001, false); // / water_mask.logical_z_dimension;
+        // each value in projected_water_atoms x,y means the summed projected water potential from all waters
         projected_water_atoms.CopyFrom(tmpPrj);
+        wxPrintf("mean water value = %f @ %i th slab\n", mean_water_value, iSlab);
         projected_water_atoms.MultiplyByConstant(mean_water_value);
 
         //        tmpPrj[0].QuickAndDirtyWriteSlice("checkWater.mrc",1,true);
