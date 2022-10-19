@@ -35,6 +35,7 @@ void CompareTemplateApp::DoInteractiveUserInput( ) {
     wxString my_symmetry                    = "C1";
     float    in_plane_angular_step_sampling = 0;
     float    in_plane_angular_step_tm       = 0;
+    int      max_threads                    = 1;
 
     UserInput* my_input = new UserInput("CompareTemplate", 1.00);
 
@@ -57,6 +58,7 @@ void CompareTemplateApp::DoInteractiveUserInput( ) {
     my_symmetry                            = my_input->GetSymmetryFromUser("Template symmetry", "The symmetry of the template reconstruction", "C1");
     angular_step_tm                        = my_input->GetFloatFromUser("TM out of plane angular step (0.0 = set automatically)", "Angular step size for global grid search", "0.0", 0.0);
     in_plane_angular_step_tm               = my_input->GetFloatFromUser("TM in plane angular step (0.0 = set automatically)", "Angular step size for in-plane rotations during the search", "0.0", 0.0);
+    max_threads                            = my_input->GetIntFromUser("Max threads", "threads used in openMP", "6", 1, 44);
 
 #ifdef ENABLEGPU
 #endif
@@ -67,7 +69,7 @@ void CompareTemplateApp::DoInteractiveUserInput( ) {
 
     delete my_input;
 
-    my_current_job.ManualSetArguments("ttttfffffffffifftfiiffi",
+    my_current_job.ManualSetArguments("ttttfffffffffifftfiiffii",
                                       input_search_images.ToUTF8( ).data( ),
                                       input_reconstruction_particle_filename.ToUTF8( ).data( ),
                                       input_reconstruction_correct_filename.ToUTF8( ).data( ),
@@ -90,7 +92,8 @@ void CompareTemplateApp::DoInteractiveUserInput( ) {
                                       last_search_position,
                                       angular_step_tm,
                                       in_plane_angular_step_tm,
-                                      last_search_position_2);
+                                      last_search_position_2,
+                                      max_threads);
 }
 
 // override the do calculation method which will be what is actually run..
@@ -120,6 +123,7 @@ bool CompareTemplateApp::DoCalculation( ) {
     float    angular_step_tm                = my_current_job.arguments[20].ReturnFloatArgument( );
     float    in_plane_angular_step_tm       = my_current_job.arguments[21].ReturnFloatArgument( );
     int      last_search_position_2         = my_current_job.arguments[22].ReturnIntegerArgument( );
+    int      max_threads                    = my_current_job.arguments[23].ReturnIntegerArgument( );
 
     int  padded_dimensions_x;
     int  padded_dimensions_y;
@@ -287,9 +291,9 @@ bool CompareTemplateApp::DoCalculation( ) {
     //input_image.ZeroCentralPixel( );
     //input_image.DivideByConstant(sqrtf(input_image.ReturnSumOfSquares( )));
 
-    current_projection_image.Allocate(input_reconstruction_particle_file.ReturnXSize( ), input_reconstruction_particle_file.ReturnXSize( ), false);
-    current_projection_other.Allocate(input_reconstruction_wrong_template_file.ReturnXSize( ), input_reconstruction_wrong_template_file.ReturnXSize( ), false);
-    current_projection_correct_template.Allocate(input_reconstruction_correct_template_file.ReturnXSize( ), input_reconstruction_correct_template_file.ReturnXSize( ), false);
+    current_projection_image.Allocate(input_reconstruction_particle_file.ReturnXSize( ), input_reconstruction_particle_file.ReturnXSize( ), 1, false);
+    current_projection_other.Allocate(input_reconstruction_wrong_template_file.ReturnXSize( ), input_reconstruction_wrong_template_file.ReturnXSize( ), 1, false);
+    current_projection_correct_template.Allocate(input_reconstruction_correct_template_file.ReturnXSize( ), input_reconstruction_correct_template_file.ReturnXSize( ), 1, false);
     //pure_noise.Allocate(input_reconstruction_1_file.ReturnXSize( ), input_reconstruction_1_file.ReturnXSize( ), input_reconstruction_1_file.ReturnXSize( ), true);
     //pure_noise_2d.Allocate(input_reconstruction_1_file.ReturnXSize( ), input_reconstruction_1_file.ReturnXSize( ), false);
     //pure_noise.SetToConstant(0.0f);
@@ -322,11 +326,10 @@ bool CompareTemplateApp::DoCalculation( ) {
     float* particle_aligned_theta = new float[total_correlation_positions_sampled_view];
     float* particle_aligned_phi   = new float[total_correlation_positions_sampled_view];
 
-    Image template_correct, template_incorrect;
-
+    // generate templates
+    //#pragma omp parallel for schedule(dynamic, 1) default(shared) num_threads(max_threads) firstprivate(current_projection_image, current_projection_other, current_projection_correct_template)
     for ( current_search_position_tm = first_search_position; current_search_position_tm <= last_search_position_2; current_search_position_tm++ ) {
         for ( current_psi_tm = psi_start; current_psi_tm <= psi_max; current_psi_tm += psi_step_tm ) {
-
             angles_tm.Init(global_euler_search_tm.list_of_search_parameters[current_search_position_tm][0], global_euler_search_tm.list_of_search_parameters[current_search_position_tm][1], current_psi_tm, 0.0, 0.0);
             // generate projection from testing template for tm
             input_reconstruction_wrong.ExtractSlice(current_projection_other, angles_tm, 1.0f, false);
@@ -356,54 +359,33 @@ bool CompareTemplateApp::DoCalculation( ) {
             // Zeroing the central pixel is probably not doing anything useful...
             current_projection_correct_template.ZeroCentralPixel( );
 
-            // step 2: sample M views for particle orientations in image
-            int   view_counter = 0;
-            float aligned_psi, aligned_theta, aligned_phi;
-
+            int view_counter = 0;
             for ( current_search_position_sampled_view = first_search_position; current_search_position_sampled_view <= last_search_position; current_search_position_sampled_view++ ) {
                 for ( current_psi_sampled_view = psi_start; current_psi_sampled_view <= psi_max; current_psi_sampled_view += psi_step_sampled_view ) {
 
-                    template_correct.CopyFrom(&current_projection_correct_template);
-                    template_incorrect.CopyFrom(&current_projection_other);
-
                     angles_sampled_view.Init(global_euler_search_sampled_view.list_of_search_parameters[current_search_position_sampled_view][0], global_euler_search_sampled_view.list_of_search_parameters[current_search_position_sampled_view][1], current_psi_sampled_view, 0.0, 0.0);
-                    //TODO: padding; ratio inside of average; get different projection then tm search
-                    /*
-                    pure_noise.ExtractSlice(pure_noise_2d, angles_ref, 1.0f, false);
-                    pure_noise_2d.MultiplyPixelWise(projection_filter);
-                    pure_noise_2d.BackwardFFT( );
-                    pure_noise_2d.AddConstant(-pure_noise_2d.ReturnAverageOfRealValuesOnEdges( ));
-                    pure_noise_2d.AddConstant(-pure_noise_2d.ReturnAverageOfRealValues( ));
-                    variance = pure_noise_2d.ReturnSumOfSquares( ) - powf(pure_noise_2d.ReturnAverageOfRealValues( ), 2);
-                    pure_noise_2d.DivideByConstant(sqrtf(variance));
-                    pure_noise_2d.ForwardFFT( );
-                    pure_noise_2d.ZeroCentralPixel( );
+                    // generate particle from sampled view
+                    input_reconstruction_particle.ExtractSlice(current_projection_image, angles_sampled_view, 1.0f, false);
+                    current_projection_image.MultiplyPixelWise(projection_filter);
+                    current_projection_image.BackwardFFT( );
+                    current_projection_image.AddConstant(-current_projection_image.ReturnAverageOfRealValuesOnEdges( ));
+                    current_projection_image.AddConstant(-current_projection_image.ReturnAverageOfRealValues( ));
+                    variance = current_projection_image.ReturnSumOfSquares( ) - powf(current_projection_image.ReturnAverageOfRealValues( ), 2);
+                    current_projection_image.DivideByConstant(sqrtf(variance));
+                    current_projection_image.ForwardFFT( );
+
+// calculate cc and ac
 #ifdef MKL
                     // Use the MKL
-                    vmcMulByConj(pure_noise_2d.real_memory_allocated / 2, reinterpret_cast<MKL_Complex8*>(current_projection_2.complex_values), reinterpret_cast<MKL_Complex8*>(pure_noise_2d.complex_values), reinterpret_cast<MKL_Complex8*>(pure_noise_2d.complex_values), VML_EP | VML_FTZDAZ_ON | VML_ERRMODE_IGNORE);
+                    vmcMulByConj(current_projection_image.real_memory_allocated / 2, reinterpret_cast<MKL_Complex8*>(current_projection_other.complex_values), reinterpret_cast<MKL_Complex8*>(current_projection_image.complex_values), reinterpret_cast<MKL_Complex8*>(current_projection_image.complex_values), VML_EP | VML_FTZDAZ_ON | VML_ERRMODE_IGNORE);
 #else
-                    for ( pixel_counter = 0; pixel_counter < pure_noise_2d.real_memory_allocated / 2; pixel_counter++ ) {
-                        pure_noise_2d.complex_values[pixel_counter] = conj(pure_noise_2d.complex_values[pixel_counter]) * current_projection_2.complex_values[pixel_counter];
+                    for ( pixel_counter = 0; pixel_counter < current_projection_1.real_memory_allocated / 2; pixel_counter++ ) {
+                        current_projection_1.complex_values[pixel_counter] = conj(current_projection_1.complex_values[pixel_counter]) * current_projection_2.complex_values[pixel_counter];
                     }
 #endif
-                    pure_noise_2d.SwapRealSpaceQuadrants( );
-                    pure_noise_2d.BackwardFFT( );
-                    pure_noise_cc_val = pure_noise_2d.ReturnCentralPixelValue( ); // t2*n
-*/
-                    // generate projection from particle in image
-
-                    //       input_reconstruction_particle.ExtractSlice(current_projection_image, angles_sampled_view, 1.0f, false);
-                    // apply what we do to image in 2DTM to the "image" here
-                    //current_projection_image.ReplaceOutliersWithMean(5.0f);
-                    //current_projection_image.ForwardFFT( );
-                    //       current_projection_image.SwapRealSpaceQuadrants( );
-
-                    //       current_projection_image.ZeroCentralPixel( );
-
-                    //whitening_filter.WriteToFile("/tmp/filter.txt");
-                    //      current_projection_image.ApplyCurveFilter(&whitening_filter);
-                    //      current_projection_image.ZeroCentralPixel( );
-                    //      current_projection_image.DivideByConstant(sqrtf(current_projection_image.ReturnSumOfSquares( )));
+                    current_projection_image.SwapRealSpaceQuadrants( );
+                    current_projection_image.BackwardFFT( );
+                    cc_val = current_projection_image.ReturnCentralPixelValue( );
 
                     input_reconstruction_particle.ExtractSlice(current_projection_image, angles_sampled_view, 1.0f, false);
                     current_projection_image.MultiplyPixelWise(projection_filter);
@@ -413,66 +395,127 @@ bool CompareTemplateApp::DoCalculation( ) {
                     variance = current_projection_image.ReturnSumOfSquares( ) - powf(current_projection_image.ReturnAverageOfRealValues( ), 2);
                     current_projection_image.DivideByConstant(sqrtf(variance));
                     current_projection_image.ForwardFFT( );
-                    // Zeroing the central pixel is probably not doing anything useful...
-                    //current_projection_image.ZeroCentralPixel( );
 #ifdef MKL
                     // Use the MKL
-                    vmcMulByConj(template_incorrect.real_memory_allocated / 2, reinterpret_cast<MKL_Complex8*>(current_projection_image.complex_values), reinterpret_cast<MKL_Complex8*>(template_incorrect.complex_values), reinterpret_cast<MKL_Complex8*>(template_incorrect.complex_values), VML_EP | VML_FTZDAZ_ON | VML_ERRMODE_IGNORE);
+                    vmcMulByConj(current_projection_image.real_memory_allocated / 2, reinterpret_cast<MKL_Complex8*>(current_projection_correct_template.complex_values), reinterpret_cast<MKL_Complex8*>(current_projection_image.complex_values), reinterpret_cast<MKL_Complex8*>(current_projection_image.complex_values), VML_EP | VML_FTZDAZ_ON | VML_ERRMODE_IGNORE);
 #else
                     for ( pixel_counter = 0; pixel_counter < current_projection_1.real_memory_allocated / 2; pixel_counter++ ) {
                         current_projection_1.complex_values[pixel_counter] = conj(current_projection_1.complex_values[pixel_counter]) * current_projection_2.complex_values[pixel_counter];
                     }
 #endif
-                    template_incorrect.SwapRealSpaceQuadrants( );
-                    template_incorrect.BackwardFFT( );
-                    cc_val = template_incorrect.ReturnCentralPixelValue( );
-                    //wxPrintf("test commutative of cc: %f\n", cc_val);
-                    //exit(0);
-
-                    // re-take slice since current_projection_ref was changed to store ccs
-                    // input_reconstruction_particle.ExtractSlice(current_projection_image, angles_sampled_view, 1.0f, false);
-                    //current_projection_1.SwapRealSpaceQuadrants( );
-                    // current_projection_image.MultiplyPixelWise(projection_filter);
-                    // current_projection_image.BackwardFFT( );
-                    // current_projection_image.AddConstant(-current_projection_image.ReturnAverageOfRealValuesOnEdges( ));
-                    // current_projection_image.AddConstant(-current_projection_image.ReturnAverageOfRealValues( ));
-                    // variance = current_projection_image.ReturnSumOfSquares( ) - powf(current_projection_image.ReturnAverageOfRealValues( ), 2);
-                    // current_projection_image.DivideByConstant(sqrtf(variance));
-                    //current_projection_1.AddGaussianNoise(1.0f);
-                    // current_projection_image.ForwardFFT( );
-                    // Zeroing the central pixel is probably not doing anything useful...
-                    // current_projection_image.ZeroCentralPixel( );
-                    /*
-                    input_reconstruction_particle.ExtractSlice(current_projection_image, angles_sampled_view, 1.0f, false);
-                    current_projection_image.MultiplyPixelWise(projection_filter);
+                    current_projection_image.SwapRealSpaceQuadrants( );
                     current_projection_image.BackwardFFT( );
-                    current_projection_image.AddConstant(-current_projection_image.ReturnAverageOfRealValuesOnEdges( ));
-                    current_projection_image.AddConstant(-current_projection_image.ReturnAverageOfRealValues( ));
-                    variance = current_projection_image.ReturnSumOfSquares( ) - powf(current_projection_image.ReturnAverageOfRealValues( ), 2);
-                    current_projection_image.DivideByConstant(sqrtf(variance));
-                    //current_projection_1.AddGaussianNoise(1.0f);
-                    current_projection_image.ForwardFFT( );
-                    // Zeroing the central pixel is probably not doing anything useful...
-                    current_projection_image.ZeroCentralPixel( );
-                    */
-#ifdef MKL
-                    // Use the MKL
-                    vmcMulByConj(template_correct.real_memory_allocated / 2, reinterpret_cast<MKL_Complex8*>(current_projection_image.complex_values), reinterpret_cast<MKL_Complex8*>(template_correct.complex_values), reinterpret_cast<MKL_Complex8*>(template_correct.complex_values), VML_EP | VML_FTZDAZ_ON | VML_ERRMODE_IGNORE);
-#else
-                    for ( pixel_counter = 0; pixel_counter < current_projection_1.real_memory_allocated / 2; pixel_counter++ ) {
-                        current_projection_1.complex_values[pixel_counter] = conj(current_projection_1.complex_values[pixel_counter]) * current_projection_2.complex_values[pixel_counter];
-                    }
-#endif
-                    template_correct.SwapRealSpaceQuadrants( );
-                    template_correct.BackwardFFT( );
-                    ac_val = template_correct.ReturnCentralPixelValue( );
+                    ac_val = current_projection_image.ReturnCentralPixelValue( );
 
-                    //  temp_double_array[0] = pure_noise_cc_val;
-                    //  temp_double_array[1] = cc_val;
-                    //output_file.WriteLine(temp_double_array);
-
+                    // find alignment using ac
                     if ( current_psi_sampled_view == current_psi_tm && global_euler_search_sampled_view.list_of_search_parameters[current_search_position_sampled_view][0] == global_euler_search_tm.list_of_search_parameters[current_search_position_tm][0] && global_euler_search_sampled_view.list_of_search_parameters[current_search_position_sampled_view][1] == global_euler_search_tm.list_of_search_parameters[current_search_position_tm][1] ) {
                         wxPrintf("view %i ac/cc = %f %f \n", view_counter, ac_val, cc_val);
+                        //    continue;
+                    }
+                    // use ac to find aligned view
+
+                    if ( ac_val > collected_ac_data[view_counter] ) {
+                        collected_ac_data[view_counter]            = ac_val;
+                        collected_cc_data[view_counter]            = cc_val;
+                        collected_aligned_ratio_data[view_counter] = ac_val / cc_val;
+                        particle_aligned_psi[view_counter]         = current_psi_sampled_view;
+                        particle_aligned_theta[view_counter]       = global_euler_search_sampled_view.list_of_search_parameters[current_search_position_sampled_view][0];
+                        particle_aligned_phi[view_counter]         = global_euler_search_sampled_view.list_of_search_parameters[current_search_position_sampled_view][1];
+                        template_psi[view_counter]                 = current_psi_tm;
+                        template_theta[view_counter]               = global_euler_search_tm.list_of_search_parameters[current_search_position_tm][0];
+                        template_phi[view_counter]                 = global_euler_search_tm.list_of_search_parameters[current_search_position_tm][1];
+
+                        //if ( print_angle )
+                        //    wxPrintf("template view %f/%f/%f  image view %f/%f/%f  ac = %f  cc = %f\n", current_psi_tm, global_euler_search_tm.list_of_search_parameters[current_search_position_tm][0], global_euler_search_tm.list_of_search_parameters[current_search_position_tm][1], current_psi_sampled_view, global_euler_search_sampled_view.list_of_search_parameters[current_search_position_sampled_view][0], global_euler_search_sampled_view.list_of_search_parameters[current_search_position_sampled_view][1], ac_val, cc_val);
+                    }
+                    collected_ac_sum_data[view_counter] += (double)ac_val;
+                    collected_cc_sum_data[view_counter] += (double)cc_val;
+                    collected_ac_sum_of_squares_data[view_counter] += (double)powf(ac_val, 2);
+                    collected_cc_sum_of_squares_data[view_counter] += (double)powf(cc_val, 2);
+                    view_counter += 1;
+                }
+            }
+        }
+    }
+
+    //#pragma omp parallel for num_threads(max_threads) schedule(static) private(current_psi_sampled_view, current_search_position_tm, current_psi_tm, angles_tm, angles_sampled_view, variance, ac_val, cc_val) firstprivate(current_projection_image, current_projection_other, current_projection_correct_template) reduction(+ \
+                                                                                                                                                                                                                                                                                                                           : view_counter)
+
+    /*
+    for ( current_search_position_sampled_view = first_search_position; current_search_position_sampled_view <= last_search_position; current_search_position_sampled_view++ ) {
+        for ( current_psi_sampled_view = psi_start; current_psi_sampled_view <= psi_max; current_psi_sampled_view += psi_step_sampled_view ) {
+            angles_sampled_view.Init(global_euler_search_sampled_view.list_of_search_parameters[current_search_position_sampled_view][0], global_euler_search_sampled_view.list_of_search_parameters[current_search_position_sampled_view][1], current_psi_sampled_view, 0.0, 0.0);
+            wxPrintf("worker %i starts @ rotation %i psi %f view %i\n", ReturnThreadNumberOfCurrentThread( ), current_search_position_sampled_view, current_psi_sampled_view, view_counter);
+            // generate particle from sampled view
+            input_reconstruction_particle.ExtractSlice(current_projection_image, angles_sampled_view, 1.0f, false);
+            current_projection_image.MultiplyPixelWise(projection_filter);
+            current_projection_image.BackwardFFT( );
+            current_projection_image.AddConstant(-current_projection_image.ReturnAverageOfRealValuesOnEdges( ));
+            current_projection_image.AddConstant(-current_projection_image.ReturnAverageOfRealValues( ));
+            variance = current_projection_image.ReturnSumOfSquares( ) - powf(current_projection_image.ReturnAverageOfRealValues( ), 2);
+            current_projection_image.DivideByConstant(sqrtf(variance));
+            current_projection_image.ForwardFFT( );
+
+            // generate templates
+            for ( current_search_position_tm = first_search_position; current_search_position_tm <= last_search_position_2; current_search_position_tm++ ) {
+                for ( current_psi_tm = psi_start; current_psi_tm <= psi_max; current_psi_tm += psi_step_tm ) {
+                    angles_tm.Init(global_euler_search_tm.list_of_search_parameters[current_search_position_tm][0], global_euler_search_tm.list_of_search_parameters[current_search_position_tm][1], current_psi_tm, 0.0, 0.0);
+                    // generate projection from testing template for tm
+                    input_reconstruction_wrong.ExtractSlice(current_projection_other, angles_tm, 1.0f, false);
+                    //current_projection_2.SwapRealSpaceQuadrants( );
+                    current_projection_other.MultiplyPixelWise(projection_filter);
+                    current_projection_other.BackwardFFT( );
+                    current_projection_other.AddConstant(-current_projection_other.ReturnAverageOfRealValuesOnEdges( ));
+                    current_projection_other.AddConstant(-current_projection_other.ReturnAverageOfRealValues( ));
+                    variance = current_projection_other.ReturnSumOfSquares( ) - powf(current_projection_other.ReturnAverageOfRealValues( ), 2);
+                    current_projection_other.DivideByConstant(sqrtf(variance));
+                    //current_projection_2.AddGaussianNoise(10.0f);
+                    current_projection_other.ForwardFFT( );
+                    // Zeroing the central pixel is probably not doing anything useful...
+                    current_projection_other.ZeroCentralPixel( );
+
+                    // generate projection from particle's template for tm
+                    input_reconstruction_correct.ExtractSlice(current_projection_correct_template, angles_tm, 1.0f, false);
+                    //current_projection_2.SwapRealSpaceQuadrants( );
+                    current_projection_correct_template.MultiplyPixelWise(projection_filter);
+                    current_projection_correct_template.BackwardFFT( );
+                    current_projection_correct_template.AddConstant(-current_projection_correct_template.ReturnAverageOfRealValuesOnEdges( ));
+                    current_projection_correct_template.AddConstant(-current_projection_correct_template.ReturnAverageOfRealValues( ));
+                    variance = current_projection_correct_template.ReturnSumOfSquares( ) - powf(current_projection_correct_template.ReturnAverageOfRealValues( ), 2);
+                    current_projection_correct_template.DivideByConstant(sqrtf(variance));
+                    //current_projection_2.AddGaussianNoise(10.0f);
+                    current_projection_correct_template.ForwardFFT( );
+                    // Zeroing the central pixel is probably not doing anything useful...
+                    current_projection_correct_template.ZeroCentralPixel( );
+
+// calculate cc and ac
+#ifdef MKL
+                    // Use the MKL
+                    vmcMulByConj(current_projection_other.real_memory_allocated / 2, reinterpret_cast<MKL_Complex8*>(current_projection_image.complex_values), reinterpret_cast<MKL_Complex8*>(current_projection_other.complex_values), reinterpret_cast<MKL_Complex8*>(current_projection_other.complex_values), VML_EP | VML_FTZDAZ_ON | VML_ERRMODE_IGNORE);
+#else
+                    for ( pixel_counter = 0; pixel_counter < current_projection_1.real_memory_allocated / 2; pixel_counter++ ) {
+                        current_projection_1.complex_values[pixel_counter] = conj(current_projection_1.complex_values[pixel_counter]) * current_projection_2.complex_values[pixel_counter];
+                    }
+#endif
+                    current_projection_other.SwapRealSpaceQuadrants( );
+                    current_projection_other.BackwardFFT( );
+                    cc_val = current_projection_other.ReturnCentralPixelValue( );
+
+#ifdef MKL
+                    // Use the MKL
+                    vmcMulByConj(current_projection_correct_template.real_memory_allocated / 2, reinterpret_cast<MKL_Complex8*>(current_projection_image.complex_values), reinterpret_cast<MKL_Complex8*>(current_projection_correct_template.complex_values), reinterpret_cast<MKL_Complex8*>(current_projection_correct_template.complex_values), VML_EP | VML_FTZDAZ_ON | VML_ERRMODE_IGNORE);
+#else
+                    for ( pixel_counter = 0; pixel_counter < current_projection_1.real_memory_allocated / 2; pixel_counter++ ) {
+                        current_projection_1.complex_values[pixel_counter] = conj(current_projection_1.complex_values[pixel_counter]) * current_projection_2.complex_values[pixel_counter];
+                    }
+#endif
+                    current_projection_correct_template.SwapRealSpaceQuadrants( );
+                    current_projection_correct_template.BackwardFFT( );
+                    ac_val = current_projection_correct_template.ReturnCentralPixelValue( );
+
+                    // find alignment using ac
+                    if ( current_psi_sampled_view == current_psi_tm && global_euler_search_sampled_view.list_of_search_parameters[current_search_position_sampled_view][0] == global_euler_search_tm.list_of_search_parameters[current_search_position_tm][0] && global_euler_search_sampled_view.list_of_search_parameters[current_search_position_sampled_view][1] == global_euler_search_tm.list_of_search_parameters[current_search_position_tm][1] ) {
+                        wxPrintf("worker %i reports view %i ac/cc = %f %f \n", ReturnThreadNumberOfCurrentThread( ), view_counter, ac_val, cc_val);
                         //    continue;
                     }
 
@@ -496,11 +539,13 @@ bool CompareTemplateApp::DoCalculation( ) {
                     collected_cc_sum_data[view_counter] += (double)cc_val;
                     collected_ac_sum_of_squares_data[view_counter] += (double)powf(ac_val, 2);
                     collected_cc_sum_of_squares_data[view_counter] += (double)powf(cc_val, 2);
-                    view_counter++;
-                }
-            } // end of looping projections from targets
+
+                } // end of tm psi
+            } // end of tm
+            view_counter = view_counter + 1;
         }
     }
+*/
     //output_file.Close( );
     for ( int line_counter = 0; line_counter < total_correlation_positions_sampled_view; line_counter++ ) {
         collected_ac_sum_data[line_counter] /= total_correlation_positions_tm; // avg of ac from all tm projections
