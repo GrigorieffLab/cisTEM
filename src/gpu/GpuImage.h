@@ -244,6 +244,7 @@ class GpuImage {
     void printVal(std::string msg, int idx);
     bool HasSameDimensionsAs(GpuImage* other_image);
     void Zeros( );
+    void SetOneSliceToZeros(int k);
 
     void Abs( );
     void AbsDiff(GpuImage& other_image); // inplace
@@ -255,7 +256,13 @@ class GpuImage {
     void AddConstant(const float add_val);
     void AddConstant(const Npp32fc add_val);
 
+    void PrintVarianceOfRealValues( );
+    void PrintAverageOfRealValues( );
+    void PrintMaxOfRealValues( );
+
     void AddImage(GpuImage& other_image);
+
+    void AddImageBySlice(GpuImage& other_image, const int numel, int k);
 
     void AddImage(GpuImage* other_image) { AddImage(*other_image); }; // for compatibility with Image class
 

@@ -217,6 +217,11 @@ class Image {
         return real_values[ReturnReal1DAddressFromPhysicalCoord(wanted_x, wanted_y, wanted_z)];
     };
 
+    inline void ReplaceRealPixelAtPhysicalCoord(float wanted_pixel_value, int wanted_x, int wanted_y, int wanted_z) {
+        MyDebugAssertTrue(is_in_real_space == true, "Requested real pixel, but image is in Fourier space");
+        real_values[ReturnReal1DAddressFromPhysicalCoord(wanted_x, wanted_y, wanted_z)] = wanted_pixel_value;
+    };
+
     inline long ReturnFourier1DAddressFromPhysicalCoord(int wanted_x, int wanted_y, int wanted_z) {
         MyDebugAssertTrue(wanted_x >= 0 && wanted_x <= physical_address_of_box_center_x && wanted_y >= 0 && wanted_y <= physical_upper_bound_complex_y && wanted_z >= 0 && wanted_z <= physical_upper_bound_complex_z, "Address (%i %i %i) out of bounds (%i to %i; %i to %i; %i to %i)!", wanted_x, wanted_y, wanted_z, 0, physical_upper_bound_complex_x, 0, physical_upper_bound_complex_y, 0, physical_upper_bound_complex_z);
         return ((long(physical_upper_bound_complex_x + 1) * long(physical_upper_bound_complex_y + 1)) * long(wanted_z)) + (long(physical_upper_bound_complex_x + 1) * long(wanted_y)) + long(wanted_x);

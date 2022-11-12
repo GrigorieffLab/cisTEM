@@ -258,7 +258,8 @@ noinst_LIBRARIES += libgpucore.a
 libgpucore_a_SOURCES =       gpu/Histogram.cu \
                              gpu/TemplateMatchingCore.cu \
                              gpu/DeviceManager.cu \
-                             gpu/GpuImage.cu
+                             gpu/GpuImage.cu \
+                             gpu/TemplateSnrRatioCore.cu
                             
 libgpucore_OBJECTS=$(libgpucore_a_SOURCES:.cu=.o)
 
@@ -572,11 +573,6 @@ niko_test_CXXFLAGS = $(WX_CPPFLAGS_BASE)
 niko_test_CPPFLAGS = $(WX_CPPFLAGS_BASE)
 niko_test_LDADD = libcore.a $(WX_LIBS_BASE)
 
-compare_template_SOURCES = programs/compare_template/compare_template.cpp
-compare_template_CXXFLAGS = $(WX_CPPFLAGS_BASE)
-compare_template_CPPFLAGS = $(WX_CPPFLAGS_BASE)
-compare_template_LDADD = libcore.a $(WX_LIBS_BASE)
-
 local_resolution_filter_SOURCES = programs/local_resolution_filter/local_resolution_filter.cpp
 local_resolution_filter_CXXFLAGS = $(WX_CPPFLAGS_BASE)
 local_resolution_filter_CPPFLAGS = $(WX_CPPFLAGS_BASE)
@@ -718,6 +714,10 @@ match_template_SOURCES = programs/match_template/match_template.cpp
 match_template_CXXFLAGS = $(WX_CPPFLAGS_BASE)
 match_template_CPPFLAGS = $(WX_CPPFLAGS_BASE)
 
+compare_template_SOURCES = programs/compare_template/compare_template.cpp
+compare_template_CXXFLAGS = $(WX_CPPFLAGS_BASE)
+compare_template_CPPFLAGS = $(WX_CPPFLAGS_BASE)
+
 
 prepare_stack_matchtemplate_SOURCES = programs/prepare_stack_matchtemplate/prepare_stack_matchtemplate.cpp
 prepare_stack_matchtemplate_CXXFLAGS = $(WX_CPPFLAGS_BASE)
@@ -726,8 +726,9 @@ prepare_stack_matchtemplate_LDADD = libcore.a $(WX_LIBS_BASE)
 
 if ENABLEGPU_AM 
 match_template_LDADD = libgpucore.a libcore.a $(WX_LIBS_BASE) $(CUDA_LIBS)
+compare_template_LDADD = libgpucore.a libcore.a $(WX_LIBS_BASE) $(CUDA_LIBS)
 else
-match_template_LDADD = libcore.a $(WX_LIBS_BASE)
+compare_template_LDADD = libcore.a $(WX_LIBS_BASE)
 endif
 
 make_template_result_SOURCES = programs/make_template_result/make_template_result.cpp

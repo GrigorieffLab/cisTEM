@@ -1331,12 +1331,20 @@ void GpuImage::AddImage(GpuImage& other_image) {
     nppErr(nppiAdd_32f_C1IR_Ctx((const Npp32f*)other_image.real_values_gpu, pitch, (Npp32f*)real_values_gpu, pitch, npp_ROI, nppStream));
 }
 
+void GpuImage::AddImageBySlice(GpuImage& other_image, const int numel, int k) {
+    // Add the real_values_gpu into a double array
+    MyAssertTrue(HasSameDimensionsAs(&other_image), "Images have different dimensions");
+
+    NppInit( );
+    nppErr(nppiAdd_32f_C1IR_Ctx((const Npp32f*)&other_image.real_values_gpu[numel * k], pitch, (Npp32f*)&real_values_gpu[numel * k], pitch, npp_ROI, nppStream));
+}
+
 void GpuImage::SubtractImage(GpuImage& other_image) {
     // Add the real_values_gpu into a double array
     MyAssertTrue(HasSameDimensionsAs(&other_image), "Images have different dimensions");
 
     NppInit( );
-    nppErr(nppiSub_32f_C1IR_Ctx((const Npp32f*)other_image.real_values_gpu, pitch, (Npp32f*)real_values_gpu, pitch, npp_ROI, nppStream));
+    nppErr(nppiSub_32f_C1IR_Ctx((const Npp32f*)&other_image.real_values_gpu[0], pitch, (Npp32f*)real_values_gpu, pitch, npp_ROI, nppStream));
 }
 
 void GpuImage::AddSquaredImage(GpuImage& other_image) {
@@ -1403,6 +1411,21 @@ void GpuImage::Zeros( ) {
 
     precheck
             cudaErr(cudaMemsetAsync(real_values_gpu, 0, real_memory_allocated * sizeof(float), cudaStreamPerThread));
+    postcheck
+}
+
+void GpuImage::SetOneSliceToZeros(int k) {
+
+    MyAssertTrue(is_meta_data_initialized, "Host meta data has not been copied");
+
+    if ( ! is_in_memory_gpu ) {
+        cudaErr(cudaMalloc(&real_values_gpu, real_memory_allocated * sizeof(float)));
+        complex_values_gpu = (cufftComplex*)real_values_gpu;
+        is_in_memory_gpu   = true;
+    }
+    int memory_per_slice = real_memory_allocated / dims.z;
+    precheck
+            cudaErr(cudaMemsetAsync(&real_values_gpu[memory_per_slice * k], 0, memory_per_slice * sizeof(float), cudaStreamPerThread));
     postcheck
 }
 
@@ -2156,6 +2179,49 @@ void GpuImage::QuickAndDirtyWriteSlices(std::string filename, int first_slice, i
     float pixelSize       = 0.0f;
 
     buffer_img.QuickAndDirtyWriteSlices(filename, first_slice, last_slice, OverWriteSlices, pixelSize);
+    buffer_img.Deallocate( );
+}
+
+void GpuImage::PrintAverageOfRealValues( ) {
+
+    MyAssertTrue(is_in_memory_gpu, "Memory not allocated");
+    Image buffer_img;
+    buffer_img.Allocate(dims.x, dims.y, dims.z, true);
+
+    buffer_img.is_in_real_space         = is_in_real_space;
+    buffer_img.object_is_centred_in_box = object_is_centred_in_box;
+    // Implicitly waiting on work to finish since copy is queued in the stream
+    cudaErr(cudaMemcpy((void*)buffer_img.real_values, (const void*)real_values_gpu, real_memory_allocated * sizeof(float), cudaMemcpyDeviceToHost));
+    wxPrintf("avg = %f\n", buffer_img.ReturnAverageOfRealValues( ));
+    buffer_img.Deallocate( );
+}
+
+void GpuImage::PrintVarianceOfRealValues( ) {
+
+    MyAssertTrue(is_in_memory_gpu, "Memory not allocated");
+    Image buffer_img;
+    buffer_img.Allocate(dims.x, dims.y, dims.z, true);
+
+    buffer_img.is_in_real_space         = is_in_real_space;
+    buffer_img.object_is_centred_in_box = object_is_centred_in_box;
+    // Implicitly waiting on work to finish since copy is queued in the stream
+    cudaErr(cudaMemcpy((void*)buffer_img.real_values, (const void*)real_values_gpu, real_memory_allocated * sizeof(float), cudaMemcpyDeviceToHost));
+    wxPrintf("var = %f\n", buffer_img.ReturnVarianceOfRealValues( ));
+
+    buffer_img.Deallocate( );
+}
+
+void GpuImage::PrintMaxOfRealValues( ) {
+
+    MyAssertTrue(is_in_memory_gpu, "Memory not allocated");
+    Image buffer_img;
+    buffer_img.Allocate(dims.x, dims.y, dims.z, true);
+
+    buffer_img.is_in_real_space         = is_in_real_space;
+    buffer_img.object_is_centred_in_box = object_is_centred_in_box;
+    // Implicitly waiting on work to finish since copy is queued in the stream
+    cudaErr(cudaMemcpy((void*)buffer_img.real_values, (const void*)real_values_gpu, real_memory_allocated * sizeof(float), cudaMemcpyDeviceToHost));
+    wxPrintf("max * 10000 = %f \n", 10000.0f * buffer_img.ReturnMaximumValue( ));
     buffer_img.Deallocate( );
 }
 

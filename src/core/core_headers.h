@@ -199,6 +199,7 @@ class StackDump : public wxStackWalker // so we can give backtraces..
 #include "../gpu/GpuImage.h"
 #include "../gpu/Histogram.h"
 #include "../gpu/TemplateMatchingCore.h"
+#include "../gpu/TemplateSnrRatioCore.h"
 #endif
 
 #ifdef MKL

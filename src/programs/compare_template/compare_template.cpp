@@ -1,4 +1,5 @@
 #include "../../core/core_headers.h"
+#include "../../core/cistem_constants.h"
 
 class
         CompareTemplateApp : public MyApp {
@@ -37,6 +38,7 @@ void CompareTemplateApp::DoInteractiveUserInput( ) {
     float    in_plane_angular_step_sampling = 0;
     float    in_plane_angular_step_tm       = 0;
     int      max_threads                    = 1;
+    bool     use_gpu_input                  = false;
 
     UserInput* my_input = new UserInput("CompareTemplate", 1.00);
 
@@ -59,18 +61,18 @@ void CompareTemplateApp::DoInteractiveUserInput( ) {
     my_symmetry                            = my_input->GetSymmetryFromUser("Template symmetry", "The symmetry of the template reconstruction", "C1");
     angular_step_tm                        = my_input->GetFloatFromUser("TM out of plane angular step (0.0 = set automatically)", "Angular step size for global grid search", "0.0", 0.0);
     in_plane_angular_step_tm               = my_input->GetFloatFromUser("TM in plane angular step (0.0 = set automatically)", "Angular step size for in-plane rotations during the search", "0.0", 0.0);
-    max_threads                            = my_input->GetIntFromUser("Max threads", "threads used in openMP", "6", 1, 44);
     log_output_file                        = my_input->GetFilenameFromUser("Log file for recording meta data", "Log output file", "log.txt", false);
 #ifdef ENABLEGPU
+    use_gpu_input = my_input->GetYesNoFromUser("Use GPU", "Offload expensive calcs to GPU", "No");
+    max_threads   = my_input->GetIntFromUser("Max. threads to use for calculation", "when threading, what is the max threads to run", "1", 1);
 #endif
-
-    int first_search_position  = -1;
-    int last_search_position   = -1;
-    int last_search_position_2 = -1;
+    int first_search_position             = -1;
+    int last_search_position_sampled_view = -1;
+    int last_search_position_tm           = -1;
 
     delete my_input;
 
-    my_current_job.ManualSetArguments("ttttfffffffffifftfiiffiit",
+    my_current_job.ManualSetArguments("ttttfffffffffifftfiiffitbi",
                                       input_search_images.ToUTF8( ).data( ),
                                       input_reconstruction_particle_filename.ToUTF8( ).data( ),
                                       input_reconstruction_correct_filename.ToUTF8( ).data( ),
@@ -90,12 +92,13 @@ void CompareTemplateApp::DoInteractiveUserInput( ) {
                                       my_symmetry.ToUTF8( ).data( ),
                                       in_plane_angular_step_sampling,
                                       first_search_position,
-                                      last_search_position,
+                                      last_search_position_sampled_view,
                                       angular_step_tm,
                                       in_plane_angular_step_tm,
-                                      last_search_position_2,
-                                      max_threads,
-                                      log_output_file.ToUTF8( ).data( ));
+                                      last_search_position_tm,
+                                      log_output_file.ToUTF8( ).data( ),
+                                      use_gpu_input,
+                                      max_threads);
 }
 
 // override the do calculation method which will be what is actually run..
@@ -113,20 +116,29 @@ bool CompareTemplateApp::DoCalculation( ) {
     float    defocus2                               = my_current_job.arguments[9].ReturnFloatArgument( );
     float    defocus_angle                          = my_current_job.arguments[10].ReturnFloatArgument( );
     ;
-    float    high_resolution_limit_search   = my_current_job.arguments[11].ReturnFloatArgument( );
-    float    angular_step_sampling          = my_current_job.arguments[12].ReturnFloatArgument( );
-    int      best_parameters_to_keep        = my_current_job.arguments[13].ReturnIntegerArgument( );
-    float    padding                        = my_current_job.arguments[14].ReturnFloatArgument( );
-    float    phase_shift                    = my_current_job.arguments[15].ReturnFloatArgument( );
-    wxString my_symmetry                    = my_current_job.arguments[16].ReturnStringArgument( );
-    float    in_plane_angular_step_sampling = my_current_job.arguments[17].ReturnFloatArgument( );
-    int      first_search_position          = my_current_job.arguments[18].ReturnIntegerArgument( );
-    int      last_search_position           = my_current_job.arguments[19].ReturnIntegerArgument( );
-    float    angular_step_tm                = my_current_job.arguments[20].ReturnFloatArgument( );
-    float    in_plane_angular_step_tm       = my_current_job.arguments[21].ReturnFloatArgument( );
-    int      last_search_position_2         = my_current_job.arguments[22].ReturnIntegerArgument( );
-    int      max_threads                    = my_current_job.arguments[23].ReturnIntegerArgument( );
-    wxString log_output_file                = my_current_job.arguments[24].ReturnStringArgument( );
+    float    high_resolution_limit_search      = my_current_job.arguments[11].ReturnFloatArgument( );
+    float    angular_step_sampling             = my_current_job.arguments[12].ReturnFloatArgument( );
+    int      best_parameters_to_keep           = my_current_job.arguments[13].ReturnIntegerArgument( );
+    float    padding                           = my_current_job.arguments[14].ReturnFloatArgument( );
+    float    phase_shift                       = my_current_job.arguments[15].ReturnFloatArgument( );
+    wxString my_symmetry                       = my_current_job.arguments[16].ReturnStringArgument( );
+    float    in_plane_angular_step_sampling    = my_current_job.arguments[17].ReturnFloatArgument( );
+    int      first_search_position             = my_current_job.arguments[18].ReturnIntegerArgument( );
+    int      last_search_position_sampled_view = my_current_job.arguments[19].ReturnIntegerArgument( );
+    float    angular_step_tm                   = my_current_job.arguments[20].ReturnFloatArgument( );
+    float    in_plane_angular_step_tm          = my_current_job.arguments[21].ReturnFloatArgument( );
+    int      last_search_position_tm           = my_current_job.arguments[22].ReturnIntegerArgument( );
+    wxString log_output_file                   = my_current_job.arguments[23].ReturnStringArgument( );
+    bool     use_gpu                           = my_current_job.arguments[24].ReturnBoolArgument( );
+    int      max_threads                       = my_current_job.arguments[25].ReturnIntegerArgument( );
+
+    // This condition applies to GUI and CLI - it is just a recommendation to the user.
+    if ( use_gpu && max_threads <= 1 ) {
+        SendInfo("Warning, you are only using one thread on the GPU. Suggested minimum is 2. Check compute saturation using nvidia-smi -l 1\n");
+    }
+    if ( ! use_gpu ) {
+        SendInfo("GPU disabled\nCan use up to 44 threads on roma\n.");
+    }
 
     int  padded_dimensions_x;
     int  padded_dimensions_y;
@@ -135,18 +147,18 @@ bool CompareTemplateApp::DoCalculation( ) {
     int  number_of_rotations_tm           = 0;
     long total_correlation_positions_sampled_view, total_correlation_positions_tm;
     long current_correlation_position_sampled_view, current_correlation_position_tm;
-    long total_correlation_positions_per_thread;
+    long total_correlation_positions_sampled_view_per_thread;
     long pixel_counter;
 
-    int          current_search_position_sampled_view, current_search_position_tm;
-    float        psi_step_sampled_view = in_plane_angular_step_sampling;
-    float        psi_step_tm           = in_plane_angular_step_tm;
-    float        psi_max               = 360.0f;
-    float        psi_start             = 0.0f;
-    ParameterMap parameter_map; // needed for euler search init
-    //for (int i = 0; i < 5; i++) {parameter_map[i] = true;}
-    parameter_map.SetAllTrue( );
+    int   current_search_position_sampled_view, current_search_position_tm;
     float current_psi_sampled_view, current_psi_tm;
+    float psi_step_sampled_view = in_plane_angular_step_sampling;
+    float psi_step_tm           = in_plane_angular_step_tm;
+    float psi_max               = 360.0f;
+    float psi_start             = 0.0f;
+
+    ParameterMap parameter_map; // needed for euler search init
+    parameter_map.SetAllTrue( );
     float variance;
     float ccs_one_view_sum            = 0.0;
     float ccs_one_view_sum_of_squares = 0.0;
@@ -191,34 +203,16 @@ bool CompareTemplateApp::DoCalculation( ) {
     global_euler_search_sampled_view.CalculateGridSearchPositions(false);
     global_euler_search_tm.CalculateGridSearchPositions(false);
 
-    whitening_filter.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((input_image.logical_x_dimension / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
-    number_of_terms.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((input_image.logical_x_dimension / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
-
-    input_image.ReplaceOutliersWithMean(5.0f);
-    input_image.ForwardFFT( );
-    input_image.SwapRealSpaceQuadrants( );
-
-    input_image.ZeroCentralPixel( );
-    input_image.Compute1DPowerSpectrumCurve(&whitening_filter, &number_of_terms);
-    whitening_filter.SquareRoot( );
-    whitening_filter.Reciprocal( );
-    whitening_filter.MultiplyByConstant(1.0f / whitening_filter.ReturnMaximumValue( ));
+    first_search_position             = 0;
+    last_search_position_sampled_view = global_euler_search_sampled_view.number_of_search_positions - 1;
+    last_search_position_tm           = global_euler_search_tm.number_of_search_positions - 1;
 
     total_correlation_positions_sampled_view  = 0;
     total_correlation_positions_tm            = 0;
     current_correlation_position_sampled_view = 0;
     current_correlation_position_tm           = 0;
 
-    // if running locally, search over all of them
-
-    if ( is_running_locally == true ) {
-        first_search_position  = 0;
-        last_search_position   = global_euler_search_sampled_view.number_of_search_positions - 1;
-        last_search_position_2 = global_euler_search_tm.number_of_search_positions - 1;
-    }
-
-    // TODO unroll these loops and multiply the product.
-    for ( current_search_position_sampled_view = first_search_position; current_search_position_sampled_view <= last_search_position; current_search_position_sampled_view++ ) {
+    for ( current_search_position_sampled_view = first_search_position; current_search_position_sampled_view <= last_search_position_sampled_view; current_search_position_sampled_view++ ) {
         //loop over each rotation angle
 
         for ( current_psi_sampled_view = psi_start; current_psi_sampled_view <= psi_max; current_psi_sampled_view += psi_step_sampled_view ) {
@@ -230,7 +224,7 @@ bool CompareTemplateApp::DoCalculation( ) {
         number_of_rotations_sampled_view++;
     }
 
-    for ( current_search_position_tm = first_search_position; current_search_position_tm <= last_search_position_2; current_search_position_tm++ ) {
+    for ( current_search_position_tm = first_search_position; current_search_position_tm <= last_search_position_tm; current_search_position_tm++ ) {
         //loop over each rotation angle
 
         for ( current_psi_tm = psi_start; current_psi_tm <= psi_max; current_psi_tm += psi_step_tm ) {
@@ -243,20 +237,59 @@ bool CompareTemplateApp::DoCalculation( ) {
     }
 
     wxPrintf("Outside Loop - sampled views in an image:\n");
-    wxPrintf("Searching %i positions on the Euler sphere (first-last: %i-%i)\n", last_search_position - first_search_position, first_search_position, last_search_position);
+    wxPrintf("Searching %i positions on the Euler sphere (first-last: %i-%i)\n", last_search_position_sampled_view - first_search_position, first_search_position, last_search_position_sampled_view);
     wxPrintf("Searching %i rotations per position.\n", number_of_rotations_sampled_view);
     wxPrintf("There are %li correlation positions total.\n\n", total_correlation_positions_sampled_view);
 
     wxPrintf("Inside Loop - tm rotations:\n");
-    wxPrintf("Searching %i positions on the Euler sphere (first-last: %i-%i)\n", last_search_position_2 - first_search_position, first_search_position, last_search_position_2);
+    wxPrintf("Searching %i positions on the Euler sphere (first-last: %i-%i)\n", last_search_position_tm - first_search_position, first_search_position, last_search_position_tm);
     wxPrintf("Searching %i rotations per position.\n", number_of_rotations_tm);
     wxPrintf("There are %li correlation positions total.\n\n", total_correlation_positions_tm);
-    wxDateTime overall_start;
-    wxDateTime overall_finish;
-    overall_start = wxDateTime::Now( );
 
-    float snr_ratio, pure_noise_cc_val;
-    bool  is_maximum;
+    // These vars are only needed in the GPU code, but also need to be set out here to compile.
+    bool first_gpu_loop = true;
+    int  nGPUs          = 1;
+    int  nJobs          = last_search_position_sampled_view - first_search_position + 1;
+    if ( use_gpu && max_threads > nJobs ) {
+        wxPrintf("\n\tWarning, you request more threads (%d) than there are search positions (%d)\n", max_threads, nJobs);
+        max_threads = nJobs;
+    }
+
+    int minPos = first_search_position;
+    int maxPos = last_search_position_sampled_view;
+    int incPos = (nJobs) / (max_threads);
+
+#ifdef ENABLEGPU
+    TemplateSnrRatioCore* GPU;
+    DeviceManager         gpuDev;
+#endif
+
+    if ( use_gpu ) {
+        total_correlation_positions_sampled_view_per_thread = total_correlation_positions_sampled_view / max_threads;
+
+#ifdef ENABLEGPU
+        //    checkCudaErrors(cudaGetDeviceCount(&nGPUs));
+        GPU = new TemplateSnrRatioCore[max_threads];
+        gpuDev.Init(nGPUs);
+
+#endif
+    }
+
+    ProgressBar* my_progress;
+    my_progress = new ProgressBar(total_correlation_positions_sampled_view_per_thread);
+
+    whitening_filter.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((input_image.logical_x_dimension / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
+    number_of_terms.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((input_image.logical_x_dimension / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
+
+    input_image.ReplaceOutliersWithMean(5.0f);
+    input_image.ForwardFFT( );
+    input_image.SwapRealSpaceQuadrants( );
+
+    input_image.ZeroCentralPixel( );
+    input_image.Compute1DPowerSpectrumCurve(&whitening_filter, &number_of_terms);
+    whitening_filter.SquareRoot( );
+    whitening_filter.Reciprocal( );
+    whitening_filter.MultiplyByConstant(1.0f / whitening_filter.ReturnMaximumValue( ));
 
     //whitening_filter.WriteToFile("/tmp/filter.txt");
     //input_image.ApplyCurveFilter(&whitening_filter);
@@ -324,7 +357,7 @@ bool CompareTemplateApp::DoCalculation( ) {
 
     current_projection_image.Allocate(input_reconstruction_particle.logical_x_dimension, input_reconstruction_particle.logical_y_dimension, 1, false);
 
-    for ( current_search_position_sampled_view = first_search_position; current_search_position_sampled_view <= last_search_position; current_search_position_sampled_view++ ) {
+    for ( current_search_position_sampled_view = first_search_position; current_search_position_sampled_view <= last_search_position_sampled_view; current_search_position_sampled_view++ ) {
         for ( j = 0; j < number_of_rotations_sampled_view; j++ ) {
             current_psi_sampled_view = psi_start + j * psi_step_sampled_view;
             view_counter             = current_search_position_sampled_view * number_of_rotations_sampled_view + j;
@@ -343,7 +376,7 @@ bool CompareTemplateApp::DoCalculation( ) {
     }
     img_avg /= total_correlation_positions_sampled_view;
 
-    for ( current_search_position_sampled_view = first_search_position; current_search_position_sampled_view <= last_search_position; current_search_position_sampled_view++ ) {
+    for ( current_search_position_sampled_view = first_search_position; current_search_position_sampled_view <= last_search_position_sampled_view; current_search_position_sampled_view++ ) {
         for ( j = 0; j < number_of_rotations_sampled_view; j++ ) {
             current_psi_sampled_view = psi_start + j * psi_step_sampled_view;
             view_counter             = current_search_position_sampled_view * number_of_rotations_sampled_view + j;
@@ -364,10 +397,139 @@ bool CompareTemplateApp::DoCalculation( ) {
     wxPrintf("all images avg*1000 = %f std*1000 = %f\n", img_avg * 1000, img_std * 1000);
     log_file.WriteCommentLine("all images avg = %f std = %f\n", img_avg, img_std);
 
-    current_projection_image.Deallocate( );
+    // allocate current_projection before gpu code
+    // use particle to determine size since template volumes may be padded
+    current_projection_other.Allocate(input_reconstruction_particle.logical_x_dimension, input_reconstruction_particle.logical_y_dimension, 1, false);
+    current_projection_correct_template.Allocate(input_reconstruction_particle.logical_x_dimension, input_reconstruction_particle.logical_y_dimension, 1, false);
 
+    wxDateTime overall_start;
+    wxDateTime overall_finish;
+    overall_start                         = wxDateTime::Now( );
+    float actual_number_of_ccs_calculated = 0.0;
+    if ( use_gpu ) {
+#ifdef ENABLEGPU
+#pragma omp parallel num_threads(max_threads)
+        {
+            int tIDX = ReturnThreadNumberOfCurrentThread( );
+            gpuDev.SetGpu(tIDX);
+
+            if ( first_gpu_loop ) {
+
+                int t_first_search_position = first_search_position + (tIDX * incPos);
+                int t_last_search_position  = first_search_position + (incPos - 1) + (tIDX * incPos);
+
+                if ( tIDX == (max_threads - 1) )
+                    t_last_search_position = maxPos;
+
+                GPU[tIDX].Init(this, input_reconstruction_particle, input_reconstruction_correct, input_reconstruction_wrong, input_image, current_projection_image, current_projection_correct_template, current_projection_other, psi_max, psi_start, psi_step_sampled_view, psi_step_tm, angles_sampled_view, angles_tm, global_euler_search_sampled_view, global_euler_search_tm, t_first_search_position, t_last_search_position, first_search_position, last_search_position_tm, my_progress, number_of_rotations_sampled_view, total_correlation_positions_sampled_view, total_correlation_positions_sampled_view_per_thread, img_avg, img_std);
+
+                wxPrintf("%d\n", tIDX);
+                wxPrintf("%d\n", t_first_search_position);
+                wxPrintf("%d\n", t_last_search_position);
+                wxPrintf("Staring TemplateMatchingCore object %d to work on position range %d-%d\n", tIDX, t_first_search_position, t_last_search_position);
+
+                first_gpu_loop = false;
+            }
+        }
+#endif
+    }
+
+    // TODO: runinnerloop
+
+    if ( use_gpu ) {
+#ifdef ENABLEGPU
+        //            wxPrintf("\n\n\t\tsizeI defI %d %d\n\n\n", size_i, defocus_i);
+
+#pragma omp parallel num_threads(max_threads)
+        {
+            int tIDX = ReturnThreadNumberOfCurrentThread( );
+            gpuDev.SetGpu(tIDX);
+
+            GPU[tIDX].RunInnerLoop(projection_filter, tIDX, current_correlation_position_sampled_view);
+
+#pragma omp critical
+            {
+
+                Image mip_buffer_ac, mip_buffer_cc; // FIXME is there better way to allocate memory for d_cc and d_sum? all views or partial views?
+                mip_buffer_ac.CopyFrom(&max_intensity_projection_ac);
+
+                mip_buffer_cc.CopyFrom(&max_intensity_projection_cc);
+
+                // Image psi_buffer;
+                // psi_buffer.CopyFrom(&max_intensity_projection);
+                // Image phi_buffer;
+                // phi_buffer.CopyFrom(&max_intensity_projection);
+                // Image theta_buffer;
+                // theta_buffer.CopyFrom(&max_intensity_projection);
+
+                GPU[tIDX].d_max_intensity_projection_ac.CopyDeviceToHost(mip_buffer_ac, true, false);
+
+                // mip_buffer_ac.QuickAndDirtyWriteSlices(wxString::Format("check_gpu_run/tmpMipBuffer_ac_%i.mrc", ReturnThreadNumberOfCurrentThread( )).ToStdString( ), 1, mip_buffer_ac.logical_z_dimension);
+                GPU[tIDX].d_max_intensity_projection_cc.CopyDeviceToHost(mip_buffer_cc, true, false);
+                // mip_buffer_cc.QuickAndDirtyWriteSlices(wxString::Format("check_gpu_run/tmpMipBuffer_cc_%i.mrc", ReturnThreadNumberOfCurrentThread( )).ToStdString( ), 1, mip_buffer_cc.logical_z_dimension);
+
+                // GPU[tIDX].d_best_psi.CopyDeviceToHost(psi_buffer, true, false);
+                // GPU[tIDX].d_best_phi.CopyDeviceToHost(phi_buffer, true, false);
+                // GPU[tIDX].d_best_theta.CopyDeviceToHost(theta_buffer, true, false);
+
+                //                    mip_buffer.QuickAndDirtyWriteSlice("/tmp/tmpMipBuffer.mrc",1,1);
+                // TODO should prob aggregate these across all workers
+                // TODO add a copySum method that allocates a pinned buffer, copies there then sumes into the wanted image.
+                Image sum_ac, sum_cc;
+                Image sumSq_ac, sumSq_cc;
+
+                sum_ac.Allocate(input_reconstruction_particle.logical_x_dimension, input_reconstruction_particle.logical_y_dimension, int(total_correlation_positions_sampled_view));
+                sumSq_ac.Allocate(input_reconstruction_particle.logical_x_dimension, input_reconstruction_particle.logical_y_dimension, int(total_correlation_positions_sampled_view));
+                sum_cc.Allocate(input_reconstruction_particle.logical_x_dimension, input_reconstruction_particle.logical_y_dimension, int(total_correlation_positions_sampled_view));
+                sumSq_cc.Allocate(input_reconstruction_particle.logical_x_dimension, input_reconstruction_particle.logical_y_dimension, int(total_correlation_positions_sampled_view));
+
+                sum_ac.SetToConstant(0.0f);
+                sumSq_ac.SetToConstant(0.0f);
+                sum_cc.SetToConstant(0.0f);
+                sumSq_cc.SetToConstant(0.0f);
+
+                GPU[tIDX].d_sum3_ac.CopyDeviceToHost(sum_ac, true, false);
+                // sum_ac.QuickAndDirtyWriteSlices("cpu_sum_ac.mrc", 1, sum_ac.logical_z_dimension);
+                GPU[tIDX].d_sumSq3_ac.CopyDeviceToHost(sumSq_ac, true, false);
+                GPU[tIDX].d_sum3_cc.CopyDeviceToHost(sum_cc, true, false);
+                GPU[tIDX].d_sumSq3_cc.CopyDeviceToHost(sumSq_cc, true, false);
+
+                GPU[tIDX].d_max_intensity_projection_ac.Wait( );
+                GPU[tIDX].d_max_intensity_projection_cc.Wait( );
+
+                // TODO swap max_padding for explicit padding in x/y and limit calcs to that region.
+                for ( current_y = 0; current_y < max_intensity_projection_ac.logical_y_dimension; current_y++ ) {
+                    for ( current_x = 0; current_x < max_intensity_projection_ac.logical_x_dimension; current_x++ ) {
+                        // first mip
+                        // TODO add slice number/view counter
+                        for ( view_counter = 0; view_counter < total_correlation_positions_sampled_view; view_counter++ ) {
+                            if ( mip_buffer_ac.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter) > max_intensity_projection_ac.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter) ) {
+                                max_intensity_projection_ac.ReplaceRealPixelAtPhysicalCoord(mip_buffer_ac.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter), current_x, current_y, view_counter);
+                            }
+                            if ( mip_buffer_cc.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter) > max_intensity_projection_cc.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter) ) {
+                                max_intensity_projection_cc.ReplaceRealPixelAtPhysicalCoord(mip_buffer_cc.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter), current_x, current_y, view_counter);
+                            }
+                            correlation_pixel_sum_ac.ReplaceRealPixelAtPhysicalCoord(correlation_pixel_sum_ac.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter) + sum_ac.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter), current_x, current_y, view_counter);
+                            correlation_pixel_sum_of_squares_ac.ReplaceRealPixelAtPhysicalCoord(correlation_pixel_sum_of_squares_ac.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter) + sumSq_ac.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter), current_x, current_y, view_counter);
+                            correlation_pixel_sum_cc.ReplaceRealPixelAtPhysicalCoord(correlation_pixel_sum_cc.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter) + sum_cc.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter), current_x, current_y, view_counter);
+                            correlation_pixel_sum_of_squares_cc.ReplaceRealPixelAtPhysicalCoord(correlation_pixel_sum_of_squares_cc.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter) + sumSq_cc.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter), current_x, current_y, view_counter);
+                        }
+                    }
+                }
+
+                // GPU[tIDX].histogram.CopyToHostAndAdd(histogram_data);
+
+                //                    current_correlation_position += GPU[tIDX].total_number_of_cccs_calculated;
+                actual_number_of_ccs_calculated += GPU[tIDX].total_number_of_cccs_calculated;
+
+            } // end of omp critical block
+        } // end of parallel block
+
+#endif
+    }
+    /*
 #pragma omp parallel for num_threads(max_threads) default(shared) private(current_search_position_sampled_view, j, view_counter, angles_sampled_view, current_psi_sampled_view, current_search_position_tm, current_psi_tm, angles_tm, variance, pixel_counter, current_x, current_y, current_projection_other, current_projection_correct_template, current_projection_image, ac_val, ac_max, cc_val, cc_max, padded_projection)
-    for ( current_search_position_sampled_view = first_search_position; current_search_position_sampled_view <= last_search_position; current_search_position_sampled_view++ ) {
+    for ( current_search_position_sampled_view = first_search_position; current_search_position_sampled_view <= last_search_position_sampled_view; current_search_position_sampled_view++ ) {
         for ( j = 0; j < number_of_rotations_sampled_view; j++ ) {
             current_psi_sampled_view = psi_start + j * psi_step_sampled_view;
             view_counter             = current_search_position_sampled_view * number_of_rotations_sampled_view + j;
@@ -398,7 +560,7 @@ bool CompareTemplateApp::DoCalculation( ) {
 
             current_projection_image.ForwardFFT( );
 
-            for ( current_search_position_tm = first_search_position; current_search_position_tm <= last_search_position_2; current_search_position_tm++ ) {
+            for ( current_search_position_tm = first_search_position; current_search_position_tm <= last_search_position_tm; current_search_position_tm++ ) {
                 for ( current_psi_tm = psi_start; current_psi_tm <= psi_max; current_psi_tm += psi_step_tm ) {
                     angles_tm.Init(global_euler_search_tm.list_of_search_parameters[current_search_position_tm][0], global_euler_search_tm.list_of_search_parameters[current_search_position_tm][1], current_psi_tm, 0.0, 0.0);
                     // generate projection from testing template for tm
@@ -589,6 +751,83 @@ bool CompareTemplateApp::DoCalculation( ) {
 
     max_intensity_projection_ac.QuickAndDirtyWriteSlices("scaled_mip_ac.mrc", 1, total_correlation_positions_sampled_view);
     max_intensity_projection_cc.QuickAndDirtyWriteSlices("scaled_mip_cc.mrc", 1, total_correlation_positions_sampled_view);
+    */
+
+    // post processing and saving outputs
+    double sqrt_input_pixels = sqrt((double)(input_reconstruction_particle.logical_x_dimension * input_reconstruction_particle.logical_y_dimension));
+    wxPrintf("N = %f\n", float(sqrt_input_pixels));
+    max_intensity_projection_ac.MultiplyByConstant((float)sqrt_input_pixels);
+    max_intensity_projection_cc.MultiplyByConstant((float)sqrt_input_pixels);
+    max_intensity_projection_cc.QuickAndDirtyWriteSlices("check_gpu_run/mip_cc.mrc", 1, total_correlation_positions_sampled_view);
+    max_intensity_projection_ac.QuickAndDirtyWriteSlices("check_gpu_run/mip_ac.mrc", 1, total_correlation_positions_sampled_view);
+
+    correlation_pixel_sum_of_squares_ac.QuickAndDirtyWriteSlices("check_gpu_run/sos_ac.mrc", 1, total_correlation_positions_sampled_view);
+    correlation_pixel_sum_of_squares_cc.QuickAndDirtyWriteSlices("check_gpu_run/sos_cc.mrc", 1, total_correlation_positions_sampled_view);
+
+    correlation_pixel_sum_ac.QuickAndDirtyWriteSlices("check_gpu_run/sum_ac.mrc", 1, total_correlation_positions_sampled_view);
+    correlation_pixel_sum_cc.QuickAndDirtyWriteSlices("check_gpu_run/sum_cc.mrc", 1, total_correlation_positions_sampled_view);
+
+    for ( int current_y = 0; current_y < correlation_pixel_sum_ac.logical_y_dimension; current_y++ ) {
+        for ( int current_x = 0; current_x < correlation_pixel_sum_ac.logical_x_dimension; current_x++ ) {
+            for ( view_counter = 0; view_counter < total_correlation_positions_sampled_view; view_counter++ ) {
+                correlation_pixel_sum_ac.real_values[correlation_pixel_sum_ac.ReturnReal1DAddressFromPhysicalCoord(current_x, current_y, view_counter)] /= float(total_correlation_positions_tm);
+
+                correlation_pixel_sum_cc.real_values[correlation_pixel_sum_cc.ReturnReal1DAddressFromPhysicalCoord(current_x, current_y, view_counter)] /= float(total_correlation_positions_tm);
+
+                correlation_pixel_sum_of_squares_ac.real_values[correlation_pixel_sum_of_squares_ac.ReturnReal1DAddressFromPhysicalCoord(current_x, current_y, view_counter)] = correlation_pixel_sum_of_squares_ac.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter) / float(total_correlation_positions_tm) - powf(correlation_pixel_sum_ac.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter), 2);
+
+                correlation_pixel_sum_of_squares_cc.real_values[correlation_pixel_sum_of_squares_cc.ReturnReal1DAddressFromPhysicalCoord(current_x, current_y, view_counter)] = correlation_pixel_sum_of_squares_cc.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter) / float(total_correlation_positions_tm) - powf(correlation_pixel_sum_cc.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter), 2);
+
+                if ( correlation_pixel_sum_of_squares_ac.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter) > 0.0f ) {
+                    correlation_pixel_sum_of_squares_ac.real_values[correlation_pixel_sum_of_squares_ac.ReturnReal1DAddressFromPhysicalCoord(current_x, current_y, view_counter)] = sqrtf(correlation_pixel_sum_of_squares_ac.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter)) * (float)sqrt_input_pixels;
+                }
+                else
+                    correlation_pixel_sum_of_squares_ac.ReplaceRealPixelAtPhysicalCoord(0.0f, current_x, current_y, view_counter);
+
+                correlation_pixel_sum_ac.real_values[correlation_pixel_sum_ac.ReturnReal1DAddressFromPhysicalCoord(current_x, current_y, view_counter)] *= (float)sqrt_input_pixels;
+
+                if ( correlation_pixel_sum_of_squares_cc.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter) > 0.0f ) {
+                    correlation_pixel_sum_of_squares_cc.real_values[correlation_pixel_sum_of_squares_cc.ReturnReal1DAddressFromPhysicalCoord(current_x, current_y, view_counter)] = sqrtf(correlation_pixel_sum_of_squares_cc.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter)) * (float)sqrt_input_pixels;
+                }
+                else
+                    correlation_pixel_sum_of_squares_cc.ReplaceRealPixelAtPhysicalCoord(0.0f, current_x, current_y, view_counter);
+
+                correlation_pixel_sum_cc.real_values[correlation_pixel_sum_cc.ReturnReal1DAddressFromPhysicalCoord(current_x, current_y, view_counter)] *= (float)sqrt_input_pixels;
+            }
+        }
+    }
+    correlation_pixel_sum_ac.QuickAndDirtyWriteSlices("check_gpu_run/avg_ac.mrc", 1, total_correlation_positions_sampled_view);
+    correlation_pixel_sum_cc.QuickAndDirtyWriteSlices("check_gpu_run/avg_cc.mrc", 1, total_correlation_positions_sampled_view);
+
+    correlation_pixel_sum_of_squares_ac.QuickAndDirtyWriteSlices("check_gpu_run/var_ac.mrc", 1, total_correlation_positions_sampled_view);
+    correlation_pixel_sum_of_squares_cc.QuickAndDirtyWriteSlices("check_gpu_run/var_cc.mrc", 1, total_correlation_positions_sampled_view);
+    // scaling
+
+    for ( pixel_counter = 0; pixel_counter < max_intensity_projection_ac.real_memory_allocated; pixel_counter++ ) {
+        max_intensity_projection_ac.real_values[pixel_counter] -= correlation_pixel_sum_ac.real_values[pixel_counter];
+        max_intensity_projection_cc.real_values[pixel_counter] -= correlation_pixel_sum_cc.real_values[pixel_counter];
+
+        if ( correlation_pixel_sum_of_squares_ac.real_values[pixel_counter] > 0.0f ) {
+            max_intensity_projection_ac.real_values[pixel_counter] /= correlation_pixel_sum_of_squares_ac.real_values[pixel_counter];
+        }
+        else
+            max_intensity_projection_ac.real_values[pixel_counter] = 0.0f;
+
+        if ( correlation_pixel_sum_of_squares_cc.real_values[pixel_counter] > 0.0f ) {
+            max_intensity_projection_cc.real_values[pixel_counter] /= correlation_pixel_sum_of_squares_cc.real_values[pixel_counter];
+        }
+        else
+            max_intensity_projection_cc.real_values[pixel_counter] = 0.0f;
+    }
+
+    max_intensity_projection_ac.QuickAndDirtyWriteSlices("check_gpu_run/scaled_mip_ac.mrc", 1, total_correlation_positions_sampled_view);
+    max_intensity_projection_cc.QuickAndDirtyWriteSlices("check_gpu_run/scaled_mip_cc.mrc", 1, total_correlation_positions_sampled_view);
+#ifdef ENABLEGPU
+    if ( use_gpu ) {
+        delete[] GPU;
+    }
+
+#endif
 
     wxPrintf("\n\n\tTimings: Overall: %s\n", (wxDateTime::Now( ) - overall_start).Format( ));
 
