@@ -139,8 +139,8 @@ void TemplateSnrRatioCore::Init(MyApp*           parent_pointer,
 void TemplateSnrRatioCore::RunInnerLoop(Image& projection_filter, int threadIDX, long& current_correlation_position_sampled_view) {
 
     // Make sure we are starting with zeros
-    d_max_intensity_projection_ac.Zeros( );
-    d_max_intensity_projection_cc.Zeros( );
+    d_max_intensity_projection_ac.SetToConstant(-FLT_MAX);
+    d_max_intensity_projection_cc.SetToConstant(-FLT_MAX);
 
     d_padded_image.Zeros( );
     d_padded_image.ConvertToHalfPrecision(false);
@@ -206,15 +206,17 @@ void TemplateSnrRatioCore::RunInnerLoop(Image& projection_filter, int threadIDX,
     int thisDevice;
     cudaGetDevice(&thisDevice);
     wxPrintf("Thread %d is running on device %d\n", threadIDX, thisDevice);
+    int   view_counter;
+    float current_psi_sampled_view;
 
     for ( current_search_position_sampled_view = first_search_position_sampled_view; current_search_position_sampled_view <= last_search_position_sampled_view; current_search_position_sampled_view++ ) {
         if ( current_search_position_sampled_view % 10 == 0 ) {
             wxPrintf("Starting position %d/ %d\n", current_search_position_sampled_view, last_search_position_sampled_view);
         }
-        for ( int j = 0; j < number_of_rotations_sampled_view; j++ ) {
-            ccc_counter                    = 0; // stores the tm ccs calculated
-            float current_psi_sampled_view = psi_start + j * psi_step_sampled_view;
-            int   view_counter             = current_search_position_sampled_view * number_of_rotations_sampled_view + j;
+        for ( int j = 0; j < number_of_rotations_sampled_view; j++ ) { // check if the max is actually the psi_max CHECKME FIXME
+            ccc_counter              = 0; // stores the tm ccs calculated
+            current_psi_sampled_view = psi_start + j * psi_step_sampled_view;
+            view_counter             = current_search_position_sampled_view * number_of_rotations_sampled_view + j;
             wxPrintf("worker %i starts on view %i\n\n", ReturnThreadNumberOfCurrentThread( ), view_counter);
             angles_sampled_view.Init(global_euler_search_sampled_view.list_of_search_parameters[current_search_position_sampled_view][0], global_euler_search_sampled_view.list_of_search_parameters[current_search_position_sampled_view][1], current_psi_sampled_view, 0.0, 0.0);
             //			current_projection.SetToConstant(0.0f); // This also sets the FFT padding to zero
@@ -228,11 +230,14 @@ void TemplateSnrRatioCore::RunInnerLoop(Image& projection_filter, int threadIDX,
             current_projection_image.DivideByConstant(std_for_normalization);
             current_projection_image.ForwardFFT( );
             current_projection_image.SwapRealSpaceQuadrants( );
+            current_projection_image.QuickAndDirtyWriteSlice(wxString::Format("check_gpu_run/c_img_%i.mrc", view_counter).ToStdString( ), 1);
 
             cudaStreamWaitEvent(cudaStreamPerThread, image_projection_is_free_Event, 0);
             d_current_projection_image.CopyHostToDevice( );
+            d_current_projection_image.QuickAndDirtyWriteSlices(wxString::Format("check_gpu_run/d_img_%i.mrc", view_counter).ToStdString( ), 1, 1);
 
             d_current_projection_image.ConvertToHalfPrecision(false);
+
             // normalize using avg and std from all sampled views
             // d_current_projection_image.AddConstant(-avg_for_normalization);
             // d_current_projection_image.MultiplyByConstant(1 / std_for_normalization);
@@ -306,31 +311,31 @@ void TemplateSnrRatioCore::RunInnerLoop(Image& projection_filter, int threadIDX,
                     }
 
                     if ( ccc_counter % 100 == 0 ) {
-                        d_sum2_ac.AddImageBySlice(d_sum1_ac, int(d_sum1_ac.real_memory_allocated / d_sum1_ac.dims.z), view_counter);
-                        d_sum1_ac.SetOneSliceToZeros(view_counter);
+                        d_sum2_ac.AddImage(d_sum1_ac);
+                        d_sum1_ac.Zeros( );
 
-                        d_sum2_cc.AddImageBySlice(d_sum1_cc, int(d_sum1_ac.real_memory_allocated / d_sum1_ac.dims.z), view_counter);
-                        d_sum1_cc.SetOneSliceToZeros(view_counter);
+                        d_sum2_cc.AddImage(d_sum1_cc);
+                        d_sum1_cc.Zeros( );
 
-                        d_sumSq2_ac.AddImageBySlice(d_sumSq1_ac, int(d_sum1_ac.real_memory_allocated / d_sum1_ac.dims.z), view_counter);
-                        d_sumSq1_ac.SetOneSliceToZeros(view_counter);
+                        d_sumSq2_ac.AddImage(d_sumSq1_ac);
+                        d_sumSq1_ac.Zeros( );
 
-                        d_sumSq2_cc.AddImageBySlice(d_sumSq1_cc, int(d_sum1_ac.real_memory_allocated / d_sum1_ac.dims.z), view_counter);
-                        d_sumSq1_cc.SetOneSliceToZeros(view_counter);
+                        d_sumSq2_cc.AddImage(d_sumSq1_cc);
+                        d_sumSq1_cc.Zeros( );
                     }
 
-                    if ( ccc_counter % 10000 == 0 ) {
+                    if ( ccc_counter % 10000 == 0 ) { // TODO DEBUF AFTER
                         d_sum3_ac.AddImage(d_sum2_ac);
-                        d_sum2_ac.SetOneSliceToZeros(view_counter);
+                        d_sum2_ac.Zeros( );
 
                         d_sum3_cc.AddImage(d_sum2_cc);
-                        d_sum2_cc.SetOneSliceToZeros(view_counter);
+                        d_sum2_cc.Zeros( );
 
                         d_sumSq3_ac.AddImage(d_sumSq2_ac);
-                        d_sumSq2_ac.SetOneSliceToZeros(view_counter);
+                        d_sumSq2_ac.Zeros( );
 
                         d_sumSq3_cc.AddImage(d_sumSq2_cc);
-                        d_sumSq2_cc.SetOneSliceToZeros(view_counter);
+                        d_sumSq2_cc.Zeros( );
                     }
 
                     current_projection_other.is_in_real_space            = false;
@@ -343,38 +348,46 @@ void TemplateSnrRatioCore::RunInnerLoop(Image& projection_filter, int threadIDX,
                 } // loop over tm psi angles
             } //loop over tm euler sphere position
 
-            current_projection_image.is_in_real_space = false;
-            d_padded_image.is_in_real_space           = true;
+            current_projection_image.is_in_real_space   = false;
+            d_current_projection_image.is_in_real_space = false;
 
             cudaEventRecord(image_projection_is_free_Event, cudaStreamPerThread);
             cudaStreamWaitEvent(cudaStreamPerThread, current_tm_is_done, 0);
 
             wxPrintf("worker %i finished view %i total number %d\n\n", ReturnThreadNumberOfCurrentThread( ), view_counter, ccc_counter);
 
+            // starting from here DEBUG PRIORITY
+
             this->UpdateSums(my_stats_ac, d_sum1_ac, d_sumSq1_ac, view_counter);
             this->UpdateSums(my_stats_cc, d_sum1_cc, d_sumSq1_cc, view_counter);
-            // some problem here
-            d_sum2_ac.AddImageBySlice(d_sum1_ac, int(d_sum1_ac.real_memory_allocated / d_sum1_ac.dims.z), view_counter);
-            d_sumSq2_ac.AddImageBySlice(d_sumSq1_ac, int(d_sum1_ac.real_memory_allocated / d_sum1_ac.dims.z), view_counter);
+            // starting from here DEBUG PRIORITY
 
-            d_sum3_ac.AddImageBySlice(d_sum2_ac, int(d_sum1_ac.real_memory_allocated / d_sum1_ac.dims.z), view_counter);
-            d_sumSq3_ac.AddImageBySlice(d_sumSq2_ac, int(d_sum1_ac.real_memory_allocated / d_sum1_ac.dims.z), view_counter);
+            d_sum2_ac.AddImage(d_sum1_ac); // AddImageBySlice not working; memory messed up; try to use single slice images instead;
+            d_sumSq2_ac.AddImage(d_sumSq1_ac);
 
-            d_sum2_cc.AddImageBySlice(d_sum1_cc, int(d_sum1_ac.real_memory_allocated / d_sum1_ac.dims.z), view_counter);
-            d_sumSq2_cc.AddImageBySlice(d_sumSq1_cc, int(d_sum1_ac.real_memory_allocated / d_sum1_ac.dims.z), view_counter);
+            d_sum3_ac.AddImage(d_sum2_ac);
+            d_sumSq3_ac.AddImage(d_sumSq2_ac);
 
-            d_sum3_cc.AddImageBySlice(d_sum2_cc, int(d_sum1_ac.real_memory_allocated / d_sum1_ac.dims.z), view_counter);
-            d_sumSq3_cc.AddImageBySlice(d_sumSq2_cc, int(d_sum1_ac.real_memory_allocated / d_sum1_ac.dims.z), view_counter);
+            d_sum2_cc.AddImage(d_sum1_cc);
+            d_sumSq2_cc.AddImage(d_sumSq1_cc);
 
-            // d_sum3_ac.AddImage(d_sum2_ac);
-            // d_sumSq3_ac.AddImage(d_sumSq2_ac);
+            d_sum3_cc.AddImage(d_sum2_cc);
+            d_sumSq3_cc.AddImage(d_sumSq2_cc);
+            // to here DEBUG
 
-            // d_sum2_cc.AddImage(d_sum1_cc);
-            // d_sumSq2_cc.AddImage(d_sumSq1_cc);
+            /*
+            d_sum2_ac.AddImage(d_sum1_ac);
+            d_sumSq2_ac.AddImage(d_sumSq1_ac);
 
-            // d_sum3_cc.AddImage(d_sum2_cc);
-            // d_sumSq3_cc.AddImage(d_sumSq2_cc);
+            d_sum3_ac.AddImage(d_sum2_ac);
+            d_sumSq3_ac.AddImage(d_sumSq2_ac);
 
+            d_sum2_cc.AddImage(d_sum1_cc);
+            d_sumSq2_cc.AddImage(d_sumSq1_cc);
+
+            d_sum3_cc.AddImage(d_sum2_cc);
+            d_sumSq3_cc.AddImage(d_sumSq2_cc);
+*/
             this->WriteMipToImage(view_counter);
 
             if ( ReturnThreadNumberOfCurrentThread( ) == 0 ) {
@@ -384,17 +397,15 @@ void TemplateSnrRatioCore::RunInnerLoop(Image& projection_filter, int threadIDX,
                 my_progress->Update(current_correlation_position_sampled_view); // move progress bar to inside loop more informative this way?
             }
             cudaEventRecord(current_view_is_done, cudaStreamPerThread); //testing here
-
+            d_max_intensity_projection_ac.QuickAndDirtyWriteSlices(wxString::Format("check_gpu_run/d_mip_view_%i.mrc", view_counter).ToStdString( ), 1, d_sum1_ac.dims.z);
         } // loop over sampled views psi angles
+        // there seems to be problem between the outer for loops connection
     } // loop over sampled views euler sphere position
 
+    exit(0);
     cudaStreamWaitEvent(cudaStreamPerThread, current_view_is_done, 0);
 
     cudaErr(cudaStreamSynchronize(cudaStreamPerThread));
-    d_sum1_ac.QuickAndDirtyWriteSlices("check_gpu_run/d_sum1_ac.mrc", 1, d_sum1_ac.dims.z);
-    d_sumSq1_ac.QuickAndDirtyWriteSlices("check_gpu_run/d_sumSq1_ac.mrc", 1, d_sum1_ac.dims.z);
-    d_sum3_ac.QuickAndDirtyWriteSlices("check_gpu_run/d_sum3_ac.mrc", 1, d_sum1_ac.dims.z);
-    d_sumSq3_ac.QuickAndDirtyWriteSlices("check_gpu_run/d_sumSq3_ac.mrc", 1, d_sum1_ac.dims.z);
 
     cudaErr(cudaFree(my_peaks_ac));
     cudaErr(cudaFree(my_stats_ac));
@@ -445,7 +456,7 @@ void TemplateSnrRatioCore::WriteMipToImage(int view_counter) {
 
     precheck
             dim3 threadsPerBlock = dim3(1024, 1, 1);
-    dim3         gridDims        = dim3((d_max_intensity_projection_ac.real_memory_allocated / d_max_intensity_projection_ac.dims.z + threadsPerBlock.x - 1) / threadsPerBlock.x, 1, 1);
+    dim3         gridDims        = dim3((d_max_intensity_projection_ac.real_memory_allocated / d_max_intensity_projection_ac.dims.z + threadsPerBlock.x - 1) / threadsPerBlock.x, 1, 1); // CHECKME FIXME does gridDims matter? Do I really need to divide by z?
 
     WriteMipToImageKernel<<<gridDims, threadsPerBlock, 0, cudaStreamPerThread>>>(my_peaks_ac, my_new_peaks_ac, d_max_intensity_projection_ac.real_memory_allocated / d_max_intensity_projection_ac.dims.z, d_max_intensity_projection_ac.real_values_gpu, view_counter);
     WriteMipToImageKernel<<<gridDims, threadsPerBlock, 0, cudaStreamPerThread>>>(my_peaks_cc, my_new_peaks_cc, d_max_intensity_projection_cc.real_memory_allocated / d_max_intensity_projection_ac.dims.z, d_max_intensity_projection_cc.real_values_gpu, view_counter);
