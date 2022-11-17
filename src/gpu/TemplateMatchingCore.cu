@@ -91,7 +91,7 @@ void TemplateMatchingCore::Init(MyApp*           parent_pointer,
     d_sum3.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
     d_sumSq3.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
 
-    wxPrintf("Setting up the histogram\n\n");
+    // wxPrintf("Setting up the histogram\n\n");
     histogram.Init(histogram_number_of_bins, histogram_min_scaled, histogram_step_scaled);
     if ( max_padding > 2 ) {
         histogram.max_padding = max_padding;
@@ -155,7 +155,7 @@ void TemplateMatchingCore::RunInnerLoop(Image& projection_filter, float c_pixel,
 
     int thisDevice;
     cudaGetDevice(&thisDevice);
-    wxPrintf("Thread %d is running on device %d\n", threadIDX, thisDevice);
+    // wxPrintf("Thread %d is running on device %d\n", threadIDX, thisDevice);
 
     //	cudaErr(cudaFuncSetCacheConfig(SumPixelWiseKernel, cudaFuncCachePreferL1));
 
@@ -165,7 +165,7 @@ void TemplateMatchingCore::RunInnerLoop(Image& projection_filter, float c_pixel,
     for ( current_search_position = first_search_position; current_search_position <= last_search_position; current_search_position++ ) {
 
         if ( current_search_position % 10 == 0 ) {
-            wxPrintf("Starting position %d/ %d\n", current_search_position, last_search_position);
+            // wxPrintf("Starting position %d/ %d\n", current_search_position, last_search_position);
         }
 
         for ( float current_psi = psi_start; current_psi <= psi_max; current_psi += psi_step ) {
@@ -293,7 +293,7 @@ void TemplateMatchingCore::RunInnerLoop(Image& projection_filter, float c_pixel,
 
     } // end of outer loop euler sphere position
 
-    wxPrintf("\t\t\ntotal number %d\n", ccc_counter);
+    // wxPrintf("\t\t\ntotal number %d\n", ccc_counter);
 
     cudaStreamWaitEvent(cudaStreamPerThread, gpu_work_is_done_Event, 0);
 

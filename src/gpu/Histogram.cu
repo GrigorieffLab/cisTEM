@@ -77,7 +77,7 @@ __global__ void histogram_final_accum(float* in, float* out, int n_bins, int n_b
 
 Histogram::Histogram( ) {
     SetInitialValues( );
-    wxPrintf("\n\tInit histogram\n");
+    // wxPrintf("\n\tInit histogram\n");
 }
 
 Histogram::Histogram(int histogram_n_bins, float histogram_min, float histogram_step) {

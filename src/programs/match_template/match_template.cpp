@@ -2,6 +2,15 @@
 
 #include "../../core/cistem_constants.h"
 
+// The timing that unblur originally tracks is always on, by direct reference to cistem_timer::StopWatch
+// The profiling for development is under conrtol of --enable-profiling.
+#ifdef PROFILING
+using namespace cistem_timer;
+#else
+#define PRINT_VERBOSE
+using namespace cistem_timer_noop;
+#endif
+
 // Values for data that are passed around in the results.
 const int number_of_output_images     = 8; //mip, psi, theta, phi, pixel, defocus, sums, sqsums (scaled mip is not sent out)
 const int number_of_meta_data_values  = 6; // img_x, img_y, number cccs, histogram values.
@@ -52,7 +61,7 @@ class
     ArrayOfAggregatedTemplateResults aggregated_results;
     bool                             is_rotated_by_90 = false;
 
-    float GetMaxJobWaitTimeInSeconds( ) { return 120.0f; }
+    float GetMaxJobWaitTimeInSeconds( ) { return 360.0f; }
 
   private:
 };
@@ -532,7 +541,7 @@ bool MatchTemplateApp::DoCalculation( ) {
             max_padding = factorizable_y - original_input_image_y;
 
         if ( ReturnThreadNumberOfCurrentThread( ) == 0 ) {
-            wxPrintf("old x, y = %i %i\n  new x, y = %i %i\n", input_image.logical_x_dimension, input_image.logical_y_dimension, factorizable_x, factorizable_y);
+            //wxPrintf("old x, y = %i %i\n  new x, y = %i %i\n", input_image.logical_x_dimension, input_image.logical_y_dimension, factorizable_x, factorizable_y);
         }
 
         input_image.Resize(factorizable_x, factorizable_y, 1, input_image.ReturnAverageOfRealValuesOnEdges( ));
@@ -729,7 +738,7 @@ bool MatchTemplateApp::DoCalculation( ) {
     wxPrintf("Searching %i rotations per position.\n", number_of_rotations);
     wxPrintf("There are %li correlation positions total.\n\n", total_correlation_positions);
 
-    wxPrintf("Performing Search...\n\n");
+    //wxPrintf("Performing Search...\n\n");
 
     //    wxPrintf("Searching %i - %i of %i total positions\n", first_search_position, last_search_position, global_euler_search.number_of_search_positions);
     //    wxPrintf("psi_start = %f, psi_max = %f, psi_step = %f\n", psi_start, psi_max, psi_step);
@@ -814,10 +823,10 @@ bool MatchTemplateApp::DoCalculation( ) {
                                    max_padding, t_first_search_position, t_last_search_position,
                                    my_progress, total_correlation_positions_per_thread, is_running_locally);
 
-                    wxPrintf("%d\n", tIDX);
-                    wxPrintf("%d\n", t_first_search_position);
-                    wxPrintf("%d\n", t_last_search_position);
-                    wxPrintf("Staring TemplateMatchingCore object %d to work on position range %d-%d\n", tIDX, t_first_search_position, t_last_search_position);
+                    //wxPrintf("%d\n", tIDX);
+                    //wxPrintf("%d\n", t_first_search_position);
+                    //wxPrintf("%d\n", t_last_search_position);
+                    //wxPrintf("Staring TemplateMatchingCore object %d to work on position range %d-%d\n", tIDX, t_first_search_position, t_last_search_position);
 
                     first_gpu_loop = false;
                 }
@@ -1079,7 +1088,7 @@ bool MatchTemplateApp::DoCalculation( ) {
         }
     }
 
-    wxPrintf("\n\n\tTimings: Overall: %s\n", (wxDateTime::Now( ) - overall_start).Format( ));
+    // wxPrintf("\n\n\tTimings: Overall: %s\n", (wxDateTime::Now( ) - overall_start).Format( ));
 
     for ( pixel_counter = 0; pixel_counter < input_image.real_memory_allocated; pixel_counter++ ) {
         correlation_pixel_sum_image.real_values[pixel_counter]            = (float)correlation_pixel_sum[pixel_counter];
@@ -1426,31 +1435,31 @@ bool MatchTemplateApp::DoCalculation( ) {
 
 void MatchTemplateApp::MasterHandleProgramDefinedResult(float* result_array, long array_size, int result_number, int number_of_expected_results) {
     // do we have this image number already?
+    cistem_timer::StopWatch handleresult_timing;
 
+    handleresult_timing.start("Find Array Location");
     bool need_a_new_result = true;
     int  array_location    = -1;
     long pixel_counter;
-
-    wxPrintf("Master Handling result for image %i..", result_number);
 
     for ( int result_counter = 0; result_counter < aggregated_results.GetCount( ); result_counter++ ) {
         if ( aggregated_results[result_counter].image_number == result_number ) {
             aggregated_results[result_counter].AddResult(result_array, array_size, result_number, number_of_expected_results);
             need_a_new_result = false;
             array_location    = result_counter;
-            wxPrintf("Found array location for image %i, at %i\n", result_number, array_location);
             break;
         }
     }
-
+    handleresult_timing.lap("Find Array Location");
     if ( need_a_new_result == true ) // we aren't collecting data for this result yet.. start
     {
+        handleresult_timing.start("Insert into aggregate array");
         AggregatedTemplateResult result_to_add;
         aggregated_results.Add(result_to_add);
         aggregated_results[aggregated_results.GetCount( ) - 1].image_number = result_number;
         aggregated_results[aggregated_results.GetCount( ) - 1].AddResult(result_array, array_size, result_number, number_of_expected_results);
         array_location = aggregated_results.GetCount( ) - 1;
-        wxPrintf("Adding new result to array for image %i, at %i\n", result_number, array_location);
+        handleresult_timing.lap("Insert into aggregate array");
     }
 
     // did this complete a result?
@@ -1458,7 +1467,7 @@ void MatchTemplateApp::MasterHandleProgramDefinedResult(float* result_array, lon
     if ( aggregated_results[array_location].number_of_received_results == number_of_expected_results ) // we should be done for this image
     {
         // TODO send the result back to the GUI, for now hack mode to save the files to the directory..
-
+        handleresult_timing.start("Write mip");
         wxString directory_for_writing_results = current_job_package.jobs[0].arguments[37].ReturnStringArgument( );
 
         //        wxPrintf("temp x, y, n, resize x, y = %i %i %i %i %i \n", int(aggregated_results[array_location].collated_data_array[0]), \
@@ -1505,24 +1514,28 @@ void MatchTemplateApp::MasterHandleProgramDefinedResult(float* result_array, lon
             temp_image.real_values[pixel_counter] = aggregated_results[array_location].collated_mip_data[pixel_counter] * sqrt_input_pixels;
         }
 
-        wxPrintf("Writing result %i\n", aggregated_results[array_location].image_number - 1);
         temp_image.QuickAndDirtyWriteSlice(current_job_package.jobs[(aggregated_results[array_location].image_number - 1) * number_of_expected_results].arguments[21].ReturnStringArgument( ), 1);
         temp_image.Deallocate( );
-
+        handleresult_timing.lap("Write mip");
         // psi
-
+        handleresult_timing.start("Allocate for psi");
         temp_image.Allocate(int(aggregated_results[array_location].collated_data_array[0]), int(aggregated_results[array_location].collated_data_array[1]), true);
+        handleresult_timing.lap("Allocate for psi");
+        handleresult_timing.start("Copy values for psi");
         for ( pixel_counter = 0; pixel_counter < int(result_array[2]); pixel_counter++ ) {
             temp_image.real_values[pixel_counter] = aggregated_results[array_location].collated_psi_data[pixel_counter];
         }
-
+        handleresult_timing.lap("Copy values for psi");
+        handleresult_timing.start("Write for psi");
         //temp_image.QuickAndDirtyWriteSlice(wxString::Format("%s/psi.mrc", directory_for_writing_results).ToStdString(), aggregated_results[array_location].image_number);
         temp_image.QuickAndDirtyWriteSlice(current_job_package.jobs[(aggregated_results[array_location].image_number - 1) * number_of_expected_results].arguments[22].ReturnStringArgument( ), 1);
         psi_image.CopyFrom(&temp_image);
+        handleresult_timing.lap("Write for psi");
+        handleresult_timing.start("Deallocate for psi");
         temp_image.Deallocate( );
-
+        handleresult_timing.lap("Deallocate for psi");
         //theta
-
+        handleresult_timing.start("Write other results");
         temp_image.Allocate(int(aggregated_results[array_location].collated_data_array[0]), int(aggregated_results[array_location].collated_data_array[1]), true);
         for ( pixel_counter = 0; pixel_counter < int(result_array[2]); pixel_counter++ ) {
             temp_image.real_values[pixel_counter] = aggregated_results[array_location].collated_theta_data[pixel_counter];
@@ -1564,9 +1577,9 @@ void MatchTemplateApp::MasterHandleProgramDefinedResult(float* result_array, lon
         temp_image.QuickAndDirtyWriteSlice(current_job_package.jobs[(aggregated_results[array_location].image_number - 1) * number_of_expected_results].arguments[26].ReturnStringArgument( ), 1);
         pixel_size_image.CopyFrom(&temp_image);
         temp_image.Deallocate( );
-
+        handleresult_timing.lap("Write other results");
         // do the scaling...
-
+        handleresult_timing.start("Scaling");
         temp_image.Allocate(int(aggregated_results[array_location].collated_data_array[0]), int(aggregated_results[array_location].collated_data_array[1]), true);
         for ( pixel_counter = 0; pixel_counter < int(result_array[2]); pixel_counter++ ) {
             aggregated_results[array_location].collated_pixel_sums[pixel_counter] /= aggregated_results[array_location].total_number_of_ccs;
@@ -1613,9 +1626,9 @@ void MatchTemplateApp::MasterHandleProgramDefinedResult(float* result_array, lon
 
         temp_image.QuickAndDirtyWriteSlice(current_job_package.jobs[(aggregated_results[array_location].image_number - 1) * number_of_expected_results].arguments[36].ReturnStringArgument( ), 1);
         temp_image.Deallocate( );
-
+        handleresult_timing.lap("Scaling");
         // histogram
-
+        handleresult_timing.start("Histogram");
         float histogram_step = (histogram_max - histogram_min) / float(histogram_number_of_points);
         float temp_float     = histogram_min + (histogram_step / 2.0f); // start position
         //NumericTextFile histogram_file(wxString::Format("%s/histogram_%i.txt", directory_for_writing_results, aggregated_results[array_location].image_number), OPEN_TO_WRITE, 4);
@@ -1682,9 +1695,9 @@ void MatchTemplateApp::MasterHandleProgramDefinedResult(float* result_array, lon
         }
 
         histogram_file.Close( );
-
+        handleresult_timing.start("Histogram");
         // Calculate the result image, and keep the peak info to send back...
-
+        handleresult_timing.start("Find peaks and make result image");
         int   min_peak_radius         = current_job_package.jobs[(aggregated_results[array_location].image_number - 1) * number_of_expected_results].arguments[39].ReturnFloatArgument( );
         float min_peak_radius_squared = powf(float(min_peak_radius), 2);
 
@@ -1805,9 +1818,9 @@ void MatchTemplateApp::MasterHandleProgramDefinedResult(float* result_array, lon
         // save the output image
 
         result_image.QuickAndDirtyWriteSlice(current_job_package.jobs[(aggregated_results[array_location].image_number - 1) * number_of_expected_results].arguments[38].ReturnStringArgument( ), 1, true);
-
+        handleresult_timing.lap("Find peaks and make result image");
         // tell the gui that this result is available...
-
+        handleresult_timing.start("Send to gui and clean up");
         ArrayOfTemplateMatchFoundPeakInfos blank_changes;
         SendTemplateMatchingResultToSocket(controller_socket, aggregated_results[array_location].image_number, expected_threshold, all_peak_infos, blank_changes);
 
@@ -1816,6 +1829,8 @@ void MatchTemplateApp::MasterHandleProgramDefinedResult(float* result_array, lon
         aggregated_results.RemoveAt(array_location);
         delete[] expected_survival_histogram;
         delete[] survival_histogram;
+        handleresult_timing.lap("Send to gui and clean up");
+        handleresult_timing.print_times( );
     }
 }
 
@@ -1918,5 +1933,5 @@ void AggregatedTemplateResult::AddResult(float* result_array, long array_size, i
     }
 
     number_of_received_results++;
-    wxPrintf("Received %i of %i results\n", number_of_received_results, number_of_expected_results);
+    wxPrintf("Leader - Received %i of %i results\n", number_of_received_results, number_of_expected_results);
 }

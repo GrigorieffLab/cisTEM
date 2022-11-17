@@ -228,8 +228,11 @@ void MyApp::AddCommandLineOptions( ) {
 }
 
 void MyApp::SendNextJobTo(wxSocketBase* socket) {
-    // if we haven't dispatched all jobs yet, then send it, otherwise tell the worker to die..
-
+    // if we haven't dispatched all jobs yet, then send it, otherwise tell the
+    // worker to die..
+    wxIPV4address peer;
+    socket->GetPeer(peer);
+    wxPrintf(" Leader - Sending next job to %s:%i\n", peer.IPAddress( ), peer.Service( ));
     if ( number_of_dispatched_jobs < current_job_package.number_of_jobs ) {
         current_job_package.jobs[number_of_dispatched_jobs].SendJob(socket);
         socket_to_worker_job_pointer_hash[socket] = &current_job_package.jobs[number_of_dispatched_jobs];
@@ -635,8 +638,11 @@ wxThread::ExitCode CalculateThread::Entry( ) {
             millis_sleeping += 100;
 
             if ( millis_sleeping > job_wait_time * 1000 ) {
-                // we have been waiting for 10 seconds, something probably went wrong - so die.
-                wxPrintf("Calculation thread has been waiting for something to do for %f.2 seconds - going to finish\n", job_wait_time);
+                // we have been waiting for 10 seconds, something probably went
+                // wrong - so die.
+                wxIPV4address peer;
+                main_thread_pointer->master_socket->GetPeer(peer);
+                wxPrintf("Worker - Calculation thread %s : %s has been waiting for something to do for %f.2 seconds - going to finish\n", peer.IPAddress( ), peer.Service( ), job_wait_time);
                 QueueError(wxString::Format("Calculation thread has been waiting for something to do for %f.2 seconds - going to finish", job_wait_time));
                 break;
             }
@@ -1032,6 +1038,9 @@ void MyApp::HandleSocketResultWithImageToWrite(wxSocketBase* connected_socket, w
 }
 
 void MyApp::HandleSocketProgramDefinedResult(wxSocketBase* connected_socket, float* data_array, int size_of_data_array, int result_number, int number_of_expected_results) {
+    wxIPV4address peer;
+    connected_socket->GetPeer(peer);
+    wxPrintf("Leader received program defined result %i of %i from %s : % i\n", result_number, number_of_expected_results, peer.IPAddress( ), peer.Service( ));
     MasterHandleProgramDefinedResult(data_array, size_of_data_array, result_number, number_of_expected_results);
     delete[] data_array;
 }

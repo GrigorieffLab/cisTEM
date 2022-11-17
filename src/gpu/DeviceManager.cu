@@ -16,16 +16,16 @@ DeviceManager::~DeviceManager( ) {
 };
 
 void DeviceManager::Init(int wanted_number_of_gpus) {
-    wxPrintf("requesting %d gpus\n", wanted_number_of_gpus);
+    // wxPrintf("requesting %d gpus\n", wanted_number_of_gpus);
 
     int gpu_check = -1;
     cudaErr(cudaGetDeviceCount(&gpu_check));
-    wxPrintf("CUDA-capable device count: %d\n", gpu_check);
-    if ( wanted_number_of_gpus > MAX_GPU_COUNT ) {
-        wxPrintf("There are more gpus available (%d) than the max allowed (%d)\n",
-                 wanted_number_of_gpus, MAX_GPU_COUNT);
-        wanted_number_of_gpus = MAX_GPU_COUNT;
-    }
+    // wxPrintf("CUDA-capable device count: %d\n", gpu_check);
+    //if ( wanted_number_of_gpus > MAX_GPU_COUNT ) {
+    // wxPrintf("There are more gpus available (%d) than the max allowed (%d)\n",
+    //         wanted_number_of_gpus, MAX_GPU_COUNT);
+    //         wanted_number_of_gpus = MAX_GPU_COUNT;
+    //}
 
     size_t free_mem;
     size_t total_mem = 0;
@@ -101,7 +101,7 @@ void DeviceManager::Init(int wanted_number_of_gpus) {
 
     MyAssertTrue(selected_GPU >= 0, "No suitable GPU found. Terminating...");
 
-    wxPrintf("Found a max mem of %zd bytes on gpuIDX %d\n", max_mem, selected_GPU);
+    // wxPrintf("Found a max mem of %zd bytes on gpuIDX %d\n", max_mem, selected_GPU);
     this->nGPUs  = wanted_number_of_gpus;
     this->gpuIDX = selected_GPU;
 
