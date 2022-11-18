@@ -19,6 +19,7 @@ void CompareTemplateApp::DoInteractiveUserInput( ) {
     wxString input_search_images;
     wxString input_reconstruction_particle_filename, input_reconstruction_correct_filename, input_reconstruction_wrong_filename;
     wxString log_output_file;
+    wxString scaled_mip_ac_filename, scaled_mip_cc_filename, mip_ac_filename, mip_cc_filename, avg_ac_filename, avg_cc_filename, std_ac_filename, std_cc_filename, data_directory_name;
 
     float pixel_size              = 1.0f;
     float voltage_kV              = 300.0f;
@@ -66,13 +67,23 @@ void CompareTemplateApp::DoInteractiveUserInput( ) {
     use_gpu_input = my_input->GetYesNoFromUser("Use GPU", "Offload expensive calcs to GPU", "No");
     max_threads   = my_input->GetIntFromUser("Max. threads to use for calculation", "when threading, what is the max threads to run", "1", 1);
 #endif
+    scaled_mip_ac_filename = my_input->GetFilenameFromUser("Output scaled mip image ac", "Output scaled mip image ac", "scaled_mip_ac.mrc", false);
+    scaled_mip_cc_filename = my_input->GetFilenameFromUser("Output scaled mip image cc", "Output scaled mip image ac", "scaled_mip_cc.mrc", false);
+    mip_ac_filename        = my_input->GetFilenameFromUser("Output mip image ac", "Output mip image ac", "mip_ac.mrc", false);
+    mip_cc_filename        = my_input->GetFilenameFromUser("Output mip image cc", "Output mip image cc", "mip_cc.mrc", false);
+    avg_ac_filename        = my_input->GetFilenameFromUser("Output avg image ac", "Output avg image ac", "avg_ac.mrc", false);
+    avg_cc_filename        = my_input->GetFilenameFromUser("Output avg image cc", "Output avg image cc", "avg_cc.mrc", false);
+    std_ac_filename        = my_input->GetFilenameFromUser("Output std image ac", "Output std image ac", "std_cc.mrc", false);
+    std_cc_filename        = my_input->GetFilenameFromUser("Output std image cc", "Output std image cc", "std_cc.mrc", false);
+    data_directory_name    = my_input->GetFilenameFromUser("Name for data directory", "path to data directory", "60_120_5_2.5", false);
+
     int first_search_position             = -1;
     int last_search_position_sampled_view = -1;
     int last_search_position_tm           = -1;
 
     delete my_input;
 
-    my_current_job.ManualSetArguments("ttttfffffffffifftfiiffitbi",
+    my_current_job.ManualSetArguments("ttttfffffffffifftfiiffitbittttttttt",
                                       input_search_images.ToUTF8( ).data( ),
                                       input_reconstruction_particle_filename.ToUTF8( ).data( ),
                                       input_reconstruction_correct_filename.ToUTF8( ).data( ),
@@ -98,7 +109,16 @@ void CompareTemplateApp::DoInteractiveUserInput( ) {
                                       last_search_position_tm,
                                       log_output_file.ToUTF8( ).data( ),
                                       use_gpu_input,
-                                      max_threads);
+                                      max_threads,
+                                      scaled_mip_ac_filename.ToUTF8( ).data( ),
+                                      scaled_mip_cc_filename.ToUTF8( ).data( ),
+                                      mip_ac_filename.ToUTF8( ).data( ),
+                                      mip_cc_filename.ToUTF8( ).data( ),
+                                      avg_ac_filename.ToUTF8( ).data( ),
+                                      avg_cc_filename.ToUTF8( ).data( ),
+                                      std_ac_filename.ToUTF8( ).data( ),
+                                      std_cc_filename.ToUTF8( ).data( ),
+                                      data_directory_name.ToUTF8( ).data( ));
 }
 
 // override the do calculation method which will be what is actually run..
@@ -131,6 +151,15 @@ bool CompareTemplateApp::DoCalculation( ) {
     wxString log_output_file                   = my_current_job.arguments[23].ReturnStringArgument( );
     bool     use_gpu                           = my_current_job.arguments[24].ReturnBoolArgument( );
     int      max_threads                       = my_current_job.arguments[25].ReturnIntegerArgument( );
+    wxString scaled_mip_ac_filename            = my_current_job.arguments[26].ReturnStringArgument( );
+    wxString scaled_mip_cc_filename            = my_current_job.arguments[27].ReturnStringArgument( );
+    wxString mip_ac_filename                   = my_current_job.arguments[28].ReturnStringArgument( );
+    wxString mip_cc_filename                   = my_current_job.arguments[29].ReturnStringArgument( );
+    wxString avg_ac_filename                   = my_current_job.arguments[30].ReturnStringArgument( );
+    wxString avg_cc_filename                   = my_current_job.arguments[31].ReturnStringArgument( );
+    wxString std_ac_filename                   = my_current_job.arguments[32].ReturnStringArgument( );
+    wxString std_cc_filename                   = my_current_job.arguments[33].ReturnStringArgument( );
+    wxString data_directory_name               = my_current_job.arguments[34].ReturnStringArgument( );
 
     // This condition applies to GUI and CLI - it is just a recommendation to the user.
     if ( use_gpu && max_threads <= 1 ) {
@@ -421,7 +450,7 @@ bool CompareTemplateApp::DoCalculation( ) {
                 if ( tIDX == (max_threads - 1) )
                     t_last_search_position = maxPos;
 
-                GPU[tIDX].Init(this, input_reconstruction_particle, input_reconstruction_correct, input_reconstruction_wrong, input_image, current_projection_image, current_projection_correct_template, current_projection_other, psi_max, psi_start, psi_step_sampled_view, psi_step_tm, angles_sampled_view, angles_tm, global_euler_search_sampled_view, global_euler_search_tm, t_first_search_position, t_last_search_position, first_search_position, last_search_position_tm, my_progress, number_of_rotations_sampled_view, total_correlation_positions_sampled_view, total_correlation_positions_sampled_view_per_thread, img_avg, img_std);
+                GPU[tIDX].Init(this, input_reconstruction_particle, input_reconstruction_correct, input_reconstruction_wrong, input_image, current_projection_image, current_projection_correct_template, current_projection_other, psi_max, psi_start, psi_step_sampled_view, psi_step_tm, angles_sampled_view, angles_tm, global_euler_search_sampled_view, global_euler_search_tm, t_first_search_position, t_last_search_position, first_search_position, last_search_position_tm, my_progress, number_of_rotations_sampled_view, total_correlation_positions_sampled_view, total_correlation_positions_sampled_view_per_thread, img_avg, img_std, data_directory_name);
 
                 wxPrintf("%d\n", tIDX);
                 wxPrintf("%d\n", t_first_search_position);
@@ -462,11 +491,11 @@ bool CompareTemplateApp::DoCalculation( ) {
                 // Image theta_buffer;
                 // theta_buffer.CopyFrom(&max_intensity_projection);
 
-                GPU[tIDX].d_max_intensity_projection_ac.CopyDeviceToHost(mip_buffer_ac, true, false);
+                GPU[tIDX].d_max_intensity_projection_ac_all_views.CopyDeviceToHost(mip_buffer_ac, true, false);
 
-                // mip_buffer_ac.QuickAndDirtyWriteSlices(wxString::Format("check_gpu_run/tmpMipBuffer_ac_%i.mrc", ReturnThreadNumberOfCurrentThread( )).ToStdString( ), 1, mip_buffer_ac.logical_z_dimension);
-                GPU[tIDX].d_max_intensity_projection_cc.CopyDeviceToHost(mip_buffer_cc, true, false);
-                // mip_buffer_cc.QuickAndDirtyWriteSlices(wxString::Format("check_gpu_run/tmpMipBuffer_cc_%i.mrc", ReturnThreadNumberOfCurrentThread( )).ToStdString( ), 1, mip_buffer_cc.logical_z_dimension);
+                //  mip_buffer_ac.QuickAndDirtyWriteSlices(wxString::Format("84_5_2.5/tmpMipBuffer_ac_%i.mrc", ReturnThreadNumberOfCurrentThread( )).ToStdString( ), 1, mip_buffer_ac.logical_z_dimension);
+                GPU[tIDX].d_max_intensity_projection_cc_all_views.CopyDeviceToHost(mip_buffer_cc, true, false);
+                //  mip_buffer_cc.QuickAndDirtyWriteSlices(wxString::Format("84_5_2.5/tmpMipBuffer_cc_%i.mrc", ReturnThreadNumberOfCurrentThread( )).ToStdString( ), 1, mip_buffer_cc.logical_z_dimension);
 
                 // GPU[tIDX].d_best_psi.CopyDeviceToHost(psi_buffer, true, false);
                 // GPU[tIDX].d_best_phi.CopyDeviceToHost(phi_buffer, true, false);
@@ -488,14 +517,14 @@ bool CompareTemplateApp::DoCalculation( ) {
                 sum_cc.SetToConstant(0.0f);
                 sumSq_cc.SetToConstant(0.0f);
 
-                GPU[tIDX].d_sum3_ac.CopyDeviceToHost(sum_ac, true, false);
+                GPU[tIDX].d_sum_ac.CopyDeviceToHost(sum_ac, true, false);
                 // sum_ac.QuickAndDirtyWriteSlices("cpu_sum_ac.mrc", 1, sum_ac.logical_z_dimension);
-                GPU[tIDX].d_sumSq3_ac.CopyDeviceToHost(sumSq_ac, true, false);
-                GPU[tIDX].d_sum3_cc.CopyDeviceToHost(sum_cc, true, false);
-                GPU[tIDX].d_sumSq3_cc.CopyDeviceToHost(sumSq_cc, true, false);
+                GPU[tIDX].d_sumSq_ac.CopyDeviceToHost(sumSq_ac, true, false);
+                GPU[tIDX].d_sum_cc.CopyDeviceToHost(sum_cc, true, false);
+                GPU[tIDX].d_sumSq_cc.CopyDeviceToHost(sumSq_cc, true, false);
 
-                GPU[tIDX].d_max_intensity_projection_ac.Wait( );
-                GPU[tIDX].d_max_intensity_projection_cc.Wait( );
+                GPU[tIDX].d_max_intensity_projection_ac_all_views.Wait( );
+                GPU[tIDX].d_max_intensity_projection_cc_all_views.Wait( );
 
                 // TODO swap max_padding for explicit padding in x/y and limit calcs to that region.
                 for ( current_y = 0; current_y < max_intensity_projection_ac.logical_y_dimension; current_y++ ) {
@@ -758,14 +787,14 @@ bool CompareTemplateApp::DoCalculation( ) {
     wxPrintf("N = %f\n", float(sqrt_input_pixels));
     max_intensity_projection_ac.MultiplyByConstant((float)sqrt_input_pixels);
     max_intensity_projection_cc.MultiplyByConstant((float)sqrt_input_pixels);
-    max_intensity_projection_cc.QuickAndDirtyWriteSlices("check_gpu_run/mip_cc.mrc", 1, total_correlation_positions_sampled_view);
-    max_intensity_projection_ac.QuickAndDirtyWriteSlices("check_gpu_run/mip_ac.mrc", 1, total_correlation_positions_sampled_view);
+    max_intensity_projection_ac.QuickAndDirtyWriteSlices(mip_ac_filename.ToStdString( ), 1, total_correlation_positions_sampled_view);
+    max_intensity_projection_cc.QuickAndDirtyWriteSlices(mip_cc_filename.ToStdString( ), 1, total_correlation_positions_sampled_view);
 
-    correlation_pixel_sum_of_squares_ac.QuickAndDirtyWriteSlices("check_gpu_run/sos_ac.mrc", 1, total_correlation_positions_sampled_view);
-    correlation_pixel_sum_of_squares_cc.QuickAndDirtyWriteSlices("check_gpu_run/sos_cc.mrc", 1, total_correlation_positions_sampled_view);
+    //  correlation_pixel_sum_of_squares_ac.QuickAndDirtyWriteSlices("check_gpu_run/sos_ac.mrc", 1, total_correlation_positions_sampled_view);
+    //  correlation_pixel_sum_of_squares_cc.QuickAndDirtyWriteSlices("check_gpu_run/sos_cc.mrc", 1, total_correlation_positions_sampled_view);
 
-    correlation_pixel_sum_ac.QuickAndDirtyWriteSlices("check_gpu_run/sum_ac.mrc", 1, total_correlation_positions_sampled_view);
-    correlation_pixel_sum_cc.QuickAndDirtyWriteSlices("check_gpu_run/sum_cc.mrc", 1, total_correlation_positions_sampled_view);
+    //  correlation_pixel_sum_ac.QuickAndDirtyWriteSlices("check_gpu_run/sum_ac.mrc", 1, total_correlation_positions_sampled_view);
+    //  correlation_pixel_sum_cc.QuickAndDirtyWriteSlices("check_gpu_run/sum_cc.mrc", 1, total_correlation_positions_sampled_view);
 
     for ( int current_y = 0; current_y < correlation_pixel_sum_ac.logical_y_dimension; current_y++ ) {
         for ( int current_x = 0; current_x < correlation_pixel_sum_ac.logical_x_dimension; current_x++ ) {
@@ -796,11 +825,11 @@ bool CompareTemplateApp::DoCalculation( ) {
             }
         }
     }
-    correlation_pixel_sum_ac.QuickAndDirtyWriteSlices("check_gpu_run/avg_ac.mrc", 1, total_correlation_positions_sampled_view);
-    correlation_pixel_sum_cc.QuickAndDirtyWriteSlices("check_gpu_run/avg_cc.mrc", 1, total_correlation_positions_sampled_view);
+    correlation_pixel_sum_ac.QuickAndDirtyWriteSlices(avg_ac_filename.ToStdString( ), 1, total_correlation_positions_sampled_view);
+    correlation_pixel_sum_cc.QuickAndDirtyWriteSlices(avg_cc_filename.ToStdString( ), 1, total_correlation_positions_sampled_view);
 
-    correlation_pixel_sum_of_squares_ac.QuickAndDirtyWriteSlices("check_gpu_run/var_ac.mrc", 1, total_correlation_positions_sampled_view);
-    correlation_pixel_sum_of_squares_cc.QuickAndDirtyWriteSlices("check_gpu_run/var_cc.mrc", 1, total_correlation_positions_sampled_view);
+    correlation_pixel_sum_of_squares_ac.QuickAndDirtyWriteSlices(std_ac_filename.ToStdString( ), 1, total_correlation_positions_sampled_view);
+    correlation_pixel_sum_of_squares_cc.QuickAndDirtyWriteSlices(std_cc_filename.ToStdString( ), 1, total_correlation_positions_sampled_view);
     // scaling
 
     for ( pixel_counter = 0; pixel_counter < max_intensity_projection_ac.real_memory_allocated; pixel_counter++ ) {
@@ -820,8 +849,8 @@ bool CompareTemplateApp::DoCalculation( ) {
             max_intensity_projection_cc.real_values[pixel_counter] = 0.0f;
     }
 
-    max_intensity_projection_ac.QuickAndDirtyWriteSlices("check_gpu_run/scaled_mip_ac.mrc", 1, total_correlation_positions_sampled_view);
-    max_intensity_projection_cc.QuickAndDirtyWriteSlices("check_gpu_run/scaled_mip_cc.mrc", 1, total_correlation_positions_sampled_view);
+    max_intensity_projection_ac.QuickAndDirtyWriteSlices(scaled_mip_ac_filename.ToStdString( ), 1, total_correlation_positions_sampled_view);
+    max_intensity_projection_cc.QuickAndDirtyWriteSlices(scaled_mip_cc_filename.ToStdString( ), 1, total_correlation_positions_sampled_view);
 #ifdef ENABLEGPU
     if ( use_gpu ) {
         delete[] GPU;

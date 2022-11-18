@@ -2,7 +2,7 @@
 
 #define DO_HISTOGRAM true
 
-__global__ void UpdateMipPixelWiseKernel(__half* correlation_output, __half2* my_peaks, const int numel, __half psi, __half theta, __half phi, __half2* my_stats, __half2* my_new_peaks, const int view_counter);
+__global__ void UpdateMipPixelWiseKernel(__half* correlation_output, __half2* my_peaks, const int numel, __half psi, __half theta, __half phi, __half2* my_stats, __half2* my_new_peaks);
 
 TemplateSnrRatioCore::TemplateSnrRatioCore( ){
 
@@ -55,7 +55,8 @@ void TemplateSnrRatioCore::Init(MyApp*           parent_pointer,
                                 long             total_correlation_positions_sampled_view,
                                 long             total_correlation_positions_sampled_view_per_thread,
                                 float            avg_for_normalization,
-                                float            std_for_normalization)
+                                float            std_for_normalization,
+                                wxString         data_directory_name)
 
 {
     this->first_search_position_sampled_view = first_search_position_sampled_view;
@@ -66,6 +67,8 @@ void TemplateSnrRatioCore::Init(MyApp*           parent_pointer,
     this->angles_tm                          = angles_tm;
     this->global_euler_search_sampled_view   = global_euler_search_sampled_view;
     this->global_euler_search_tm             = global_euler_search_tm;
+
+    this->data_directory_name = data_directory_name;
 
     this->psi_start             = psi_start;
     this->psi_step_sampled_view = psi_step_sampled_view;
@@ -101,27 +104,38 @@ void TemplateSnrRatioCore::Init(MyApp*           parent_pointer,
     // d_input_image.Init(this->input_image);
     // d_input_image.CopyHostToDevice( );
     //d_padded_reference.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
-    d_max_intensity_projection_ac.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, int(this->total_correlation_positions_sampled_view), true);
+    d_max_intensity_projection_ac_all_views.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, int(this->total_correlation_positions_sampled_view), true);
 
-    d_max_intensity_projection_cc.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, int(this->total_correlation_positions_sampled_view), true);
+    d_max_intensity_projection_cc_all_views.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, int(this->total_correlation_positions_sampled_view), true);
+
+    d_max_intensity_projection_ac.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, true);
+
+    d_max_intensity_projection_cc.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, true);
 
     // d_best_psi.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
     // d_best_theta.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
     // d_best_phi.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
 
-    d_sum1_ac.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, int(this->total_correlation_positions_sampled_view), true);
-    d_sum1_cc.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, int(this->total_correlation_positions_sampled_view), true);
-    d_sum2_ac.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, int(this->total_correlation_positions_sampled_view), true);
-    d_sum2_cc.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, int(this->total_correlation_positions_sampled_view), true);
-    d_sum3_ac.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, int(this->total_correlation_positions_sampled_view), true);
-    d_sum3_cc.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, int(this->total_correlation_positions_sampled_view), true);
+    // single-view images
+    d_sum1_ac.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, true);
+    d_sum1_cc.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, true);
+    d_sum2_ac.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, true);
+    d_sum2_cc.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, true);
+    d_sum3_ac.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, true);
+    d_sum3_cc.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, true);
 
-    d_sumSq1_ac.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, int(this->total_correlation_positions_sampled_view), true);
-    d_sumSq1_cc.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, int(this->total_correlation_positions_sampled_view), true);
-    d_sumSq2_ac.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, int(this->total_correlation_positions_sampled_view), true);
-    d_sumSq2_cc.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, int(this->total_correlation_positions_sampled_view), true);
-    d_sumSq3_ac.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, int(this->total_correlation_positions_sampled_view), true);
-    d_sumSq3_cc.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, int(this->total_correlation_positions_sampled_view), true);
+    d_sumSq1_ac.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, true);
+    d_sumSq1_cc.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, true);
+    d_sumSq2_ac.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, true);
+    d_sumSq2_cc.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, true);
+    d_sumSq3_ac.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, true);
+    d_sumSq3_cc.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, true);
+
+    // collection from all views
+    d_sum_ac.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, int(this->total_correlation_positions_sampled_view), true);
+    d_sum_cc.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, int(this->total_correlation_positions_sampled_view), true);
+    d_sumSq_ac.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, int(this->total_correlation_positions_sampled_view), true);
+    d_sumSq_cc.Allocate(this->input_reconstruction_particle.logical_x_dimension, this->input_reconstruction_particle.logical_y_dimension, int(this->total_correlation_positions_sampled_view), true);
 
     this->my_progress = my_progress;
 
@@ -139,8 +153,9 @@ void TemplateSnrRatioCore::Init(MyApp*           parent_pointer,
 void TemplateSnrRatioCore::RunInnerLoop(Image& projection_filter, int threadIDX, long& current_correlation_position_sampled_view) {
 
     // Make sure we are starting with zeros
-    d_max_intensity_projection_ac.SetToConstant(-FLT_MAX);
-    d_max_intensity_projection_cc.SetToConstant(-FLT_MAX);
+
+    d_max_intensity_projection_ac_all_views.SetToConstant(-FLT_MAX);
+    d_max_intensity_projection_cc_all_views.SetToConstant(-FLT_MAX);
 
     d_padded_image.Zeros( );
     d_padded_image.ConvertToHalfPrecision(false);
@@ -155,36 +170,26 @@ void TemplateSnrRatioCore::RunInnerLoop(Image& projection_filter, int threadIDX,
     //d_best_phi.Zeros( );
     //d_best_theta.Zeros( );
 
-    d_sum1_ac.Zeros( );
-    d_sumSq1_ac.Zeros( );
-    d_sum2_ac.Zeros( );
-    d_sumSq2_ac.Zeros( );
-    d_sum3_ac.Zeros( );
-    d_sumSq3_ac.Zeros( );
-
-    d_sum1_cc.Zeros( );
-    d_sumSq1_cc.Zeros( );
-    d_sum2_cc.Zeros( );
-    d_sumSq2_cc.Zeros( );
-    d_sum3_cc.Zeros( );
-    d_sumSq3_cc.Zeros( );
+    d_sum_ac.Zeros( );
+    d_sum_cc.Zeros( );
+    d_sumSq_ac.Zeros( );
+    d_sumSq_cc.Zeros( );
 
     total_number_of_cccs_calculated = 0;
 
     // Either do not delete the single precision, or add in a copy here so that each loop over defocus vals
     // have a copy to work with. Otherwise this will not exist on the second loop
 
-    cudaErr(cudaMalloc((void**)&my_peaks_ac, sizeof(__half2) * total_correlation_positions_sampled_view * d_current_projection_image.real_memory_allocated));
-    cudaErr(cudaMalloc((void**)&my_peaks_cc, sizeof(__half2) * total_correlation_positions_sampled_view * d_current_projection_image.real_memory_allocated));
-    cudaErr(cudaMalloc((void**)&my_new_peaks_ac, sizeof(__half2) * total_correlation_positions_sampled_view * d_current_projection_image.real_memory_allocated));
-    cudaErr(cudaMalloc((void**)&my_new_peaks_cc, sizeof(__half2) * total_correlation_positions_sampled_view * d_current_projection_image.real_memory_allocated));
-    cudaErr(cudaMalloc((void**)&my_stats_ac, sizeof(__half2) * total_correlation_positions_sampled_view * d_current_projection_image.real_memory_allocated));
-    cudaErr(cudaMalloc((void**)&my_stats_cc, sizeof(__half2) * total_correlation_positions_sampled_view * d_current_projection_image.real_memory_allocated));
+    cudaErr(cudaMalloc((void**)&my_peaks_ac, sizeof(__half2) * d_current_projection_image.real_memory_allocated));
+    cudaErr(cudaMalloc((void**)&my_peaks_cc, sizeof(__half2) * d_current_projection_image.real_memory_allocated));
+    cudaErr(cudaMalloc((void**)&my_new_peaks_ac, sizeof(__half2) * d_current_projection_image.real_memory_allocated));
+    cudaErr(cudaMalloc((void**)&my_new_peaks_cc, sizeof(__half2) * d_current_projection_image.real_memory_allocated));
+    cudaErr(cudaMalloc((void**)&my_stats_ac, sizeof(__half2) * d_current_projection_image.real_memory_allocated));
+    cudaErr(cudaMalloc((void**)&my_stats_cc, sizeof(__half2) * d_current_projection_image.real_memory_allocated));
 
-    cudaErr(cudaMemset(my_peaks_ac, 0, total_correlation_positions_sampled_view * sizeof(__half2) * d_current_projection_image.real_memory_allocated));
-    cudaErr(cudaMemset(my_peaks_cc, 0, total_correlation_positions_sampled_view * sizeof(__half2) * d_current_projection_image.real_memory_allocated));
-    // cudaErr(cudaMemset(my_stats_ac, 0, total_correlation_positions_sampled_view * sizeof(__half2) * d_current_projection_image.real_memory_allocated));
-    // cudaErr(cudaMemset(my_stats_cc, 0, total_correlation_positions_sampled_view * sizeof(__half2) * d_current_projection_image.real_memory_allocated));
+    // why original code works even if we don't zero my_stats at initialization?
+    cudaErr(cudaMemset(my_stats_ac, 0, sizeof(__half2) * d_current_projection_image.real_memory_allocated));
+    cudaErr(cudaMemset(my_stats_cc, 0, sizeof(__half2) * d_current_projection_image.real_memory_allocated));
 
     cudaEvent_t image_projection_is_free_Event, ref_correct_projection_is_free_Event, ref_wrong_projection_is_free_Event, current_view_is_done,
             gpu_work_is_done_Event, current_tm_is_done;
@@ -228,13 +233,12 @@ void TemplateSnrRatioCore::RunInnerLoop(Image& projection_filter, int threadIDX,
 
             current_projection_image.AddConstant(-avg_for_normalization);
             current_projection_image.DivideByConstant(std_for_normalization);
+            wxPrintf("view %i after avg = %f std = %f\n", view_counter, current_projection_image.ReturnAverageOfRealValues( ), current_projection_image.ReturnVarianceOfRealValues( ));
             current_projection_image.ForwardFFT( );
             current_projection_image.SwapRealSpaceQuadrants( );
-            current_projection_image.QuickAndDirtyWriteSlice(wxString::Format("check_gpu_run/c_img_%i.mrc", view_counter).ToStdString( ), 1);
 
             cudaStreamWaitEvent(cudaStreamPerThread, image_projection_is_free_Event, 0);
             d_current_projection_image.CopyHostToDevice( );
-            d_current_projection_image.QuickAndDirtyWriteSlices(wxString::Format("check_gpu_run/d_img_%i.mrc", view_counter).ToStdString( ), 1, 1);
 
             d_current_projection_image.ConvertToHalfPrecision(false);
 
@@ -246,6 +250,26 @@ void TemplateSnrRatioCore::RunInnerLoop(Image& projection_filter, int threadIDX,
             //  d_padded_image.ForwardFFT(false); // IMPORTANT CHEKCME scaling must set to false ow the output is only hald of the input image
             // FIXME TODO move fft into cpu?
             // d_padded_image.SwapRealSpaceQuadrants( );
+
+            d_sum1_ac.Zeros( );
+            d_sumSq1_ac.Zeros( );
+            d_sum2_ac.Zeros( );
+            d_sumSq2_ac.Zeros( );
+            d_sum3_ac.Zeros( );
+            d_sumSq3_ac.Zeros( );
+
+            d_sum1_cc.Zeros( );
+            d_sumSq1_cc.Zeros( );
+            d_sum2_cc.Zeros( );
+            d_sumSq2_cc.Zeros( );
+            d_sum3_cc.Zeros( );
+            d_sumSq3_cc.Zeros( );
+
+            d_max_intensity_projection_ac.SetToConstant(-FLT_MAX);
+            d_max_intensity_projection_cc.SetToConstant(-FLT_MAX);
+
+            cudaErr(cudaMemset(my_peaks_ac, 0, sizeof(__half2) * d_current_projection_image.real_memory_allocated));
+            cudaErr(cudaMemset(my_peaks_cc, 0, sizeof(__half2) * d_current_projection_image.real_memory_allocated));
 
             for ( current_search_position_tm = first_search_position_tm; current_search_position_tm <= last_search_position_tm; current_search_position_tm++ ) {
                 for ( current_psi_tm = psi_start; current_psi_tm <= psi_max; current_psi_tm += psi_step_tm ) {
@@ -299,15 +323,15 @@ void TemplateSnrRatioCore::RunInnerLoop(Image& projection_filter, int threadIDX,
                     d_padded_reference_correct.BackwardFFTAfterComplexConjMul(d_current_projection_image.complex_values_16f, true);
                     d_padded_reference_wrong.BackwardFFTAfterComplexConjMul(d_current_projection_image.complex_values_16f, true);
 
-                    this->MipPixelWise(__float2half_rn(current_psi_tm), __float2half_rn(global_euler_search_tm.list_of_search_parameters[current_search_position_tm][1]), __float2half_rn(global_euler_search_tm.list_of_search_parameters[current_search_position_tm][0]), view_counter);
+                    this->MipPixelWise(__float2half_rn(current_psi_tm), __float2half_rn(global_euler_search_tm.list_of_search_parameters[current_search_position_tm][1]), __float2half_rn(global_euler_search_tm.list_of_search_parameters[current_search_position_tm][0]));
 
                     cudaEventRecord(ref_wrong_projection_is_free_Event, cudaStreamPerThread);
                     ccc_counter++;
                     total_number_of_cccs_calculated++;
 
                     if ( ccc_counter % 10 == 0 ) {
-                        this->UpdateSums(my_stats_ac, d_sum1_ac, d_sumSq1_ac, view_counter);
-                        this->UpdateSums(my_stats_cc, d_sum1_cc, d_sumSq1_cc, view_counter);
+                        this->UpdateSums(my_stats_ac, d_sum1_ac, d_sumSq1_ac);
+                        this->UpdateSums(my_stats_cc, d_sum1_cc, d_sumSq1_cc);
                     }
 
                     if ( ccc_counter % 100 == 0 ) {
@@ -358,8 +382,8 @@ void TemplateSnrRatioCore::RunInnerLoop(Image& projection_filter, int threadIDX,
 
             // starting from here DEBUG PRIORITY
 
-            this->UpdateSums(my_stats_ac, d_sum1_ac, d_sumSq1_ac, view_counter);
-            this->UpdateSums(my_stats_cc, d_sum1_cc, d_sumSq1_cc, view_counter);
+            this->UpdateSums(my_stats_ac, d_sum1_ac, d_sumSq1_ac);
+            this->UpdateSums(my_stats_cc, d_sum1_cc, d_sumSq1_cc);
             // starting from here DEBUG PRIORITY
 
             d_sum2_ac.AddImage(d_sum1_ac); // AddImageBySlice not working; memory messed up; try to use single slice images instead;
@@ -388,8 +412,11 @@ void TemplateSnrRatioCore::RunInnerLoop(Image& projection_filter, int threadIDX,
             d_sum3_cc.AddImage(d_sum2_cc);
             d_sumSq3_cc.AddImage(d_sumSq2_cc);
 */
-            this->WriteMipToImage(view_counter);
+            this->WriteMipToImage( );
+            d_max_intensity_projection_ac.QuickAndDirtyWriteSlices(wxString::Format("%s/d_mip_ac_view_%i_%f.mrc", data_directory_name, view_counter, psi_step_tm).ToStdString( ), 1, 1);
+            d_max_intensity_projection_cc.QuickAndDirtyWriteSlices(wxString::Format("%s/d_mip_cc_view_%i_%f.mrc", data_directory_name, view_counter, psi_step_tm).ToStdString( ), 1, 1);
 
+            exit(0);
             if ( ReturnThreadNumberOfCurrentThread( ) == 0 ) {
                 current_correlation_position_sampled_view++;
                 if ( current_correlation_position_sampled_view > total_correlation_positions_sampled_view_per_thread )
@@ -397,12 +424,22 @@ void TemplateSnrRatioCore::RunInnerLoop(Image& projection_filter, int threadIDX,
                 my_progress->Update(current_correlation_position_sampled_view); // move progress bar to inside loop more informative this way?
             }
             cudaEventRecord(current_view_is_done, cudaStreamPerThread); //testing here
-            d_max_intensity_projection_ac.QuickAndDirtyWriteSlices(wxString::Format("check_gpu_run/d_mip_view_%i.mrc", view_counter).ToStdString( ), 1, d_sum1_ac.dims.z);
+            d_max_intensity_projection_ac.CopyFrom2DImageTo3DImage(d_max_intensity_projection_ac_all_views, d_max_intensity_projection_ac_all_views.real_memory_allocated / d_max_intensity_projection_ac_all_views.dims.z * view_counter);
+            d_max_intensity_projection_cc.CopyFrom2DImageTo3DImage(d_max_intensity_projection_cc_all_views, d_max_intensity_projection_cc_all_views.real_memory_allocated / d_max_intensity_projection_cc_all_views.dims.z * view_counter);
+
+            d_sum3_ac.CopyFrom2DImageTo3DImage(d_sum_ac, d_sum_ac.real_memory_allocated / d_sum_ac.dims.z * view_counter);
+            d_sum3_cc.CopyFrom2DImageTo3DImage(d_sum_cc, d_sum_cc.real_memory_allocated / d_sum_cc.dims.z * view_counter);
+            d_sumSq3_ac.CopyFrom2DImageTo3DImage(d_sumSq_ac, d_sumSq_ac.real_memory_allocated / d_sumSq_ac.dims.z * view_counter);
+            d_sumSq3_cc.CopyFrom2DImageTo3DImage(d_sumSq_cc, d_sumSq_cc.real_memory_allocated / d_sumSq_cc.dims.z * view_counter);
+
+            //  d_max_intensity_projection_ac_all_views.QuickAndDirtyWriteSlices(wxString::Format("check_gpu_run/d_mip_all_views_%i.mrc", view_counter).ToStdString( ), 1, d_max_intensity_projection_ac_all_views.dims.z);
+            //  d_sum_ac.QuickAndDirtyWriteSlices(wxString::Format("check_gpu_run/d_sum_ac_all_views_%i.mrc", view_counter).ToStdString( ), 1, d_sum_ac.dims.z);
+            //  d_sumSq_ac.QuickAndDirtyWriteSlices(wxString::Format("check_gpu_run/d_sumSq_ac_all_views_%i.mrc", view_counter).ToStdString( ), 1, d_sum_ac.dims.z);
+
         } // loop over sampled views psi angles
         // there seems to be problem between the outer for loops connection
     } // loop over sampled views euler sphere position
 
-    exit(0);
     cudaStreamWaitEvent(cudaStreamPerThread, current_view_is_done, 0);
 
     cudaErr(cudaStreamSynchronize(cudaStreamPerThread));
@@ -413,23 +450,25 @@ void TemplateSnrRatioCore::RunInnerLoop(Image& projection_filter, int threadIDX,
     cudaErr(cudaFree(my_peaks_cc));
     cudaErr(cudaFree(my_stats_cc));
     cudaErr(cudaFree(my_new_peaks_cc));
+    // d_max_intensity_projection_ac_all_views.QuickAndDirtyWriteSlices(wxString::Format("84_5_2.5/d_mip_all_views.mrc", view_counter).ToStdString( ), 1, d_max_intensity_projection_ac_all_views.dims.z);
+    // d_max_intensity_projection_cc_all_views.QuickAndDirtyWriteSlices(wxString::Format("84_5_2.5/d_mip_all_views.mrc", view_counter).ToStdString( ), 1, d_max_intensity_projection_ac_all_views.dims.z);
 }
 
-void TemplateSnrRatioCore::MipPixelWise(__half psi, __half theta, __half phi, const int view_counter) {
+void TemplateSnrRatioCore::MipPixelWise(__half psi, __half theta, __half phi) {
 
     precheck
             // N*
             d_padded_reference_correct.ReturnLaunchParamtersLimitSMs(5.f, 1024);
     d_padded_reference_wrong.ReturnLaunchParamtersLimitSMs(5.f, 1024);
 
-    UpdateMipPixelWiseKernel<<<d_padded_reference_correct.gridDims, d_padded_reference_correct.threadsPerBlock, 0, cudaStreamPerThread>>>((__half*)d_padded_reference_correct.real_values_16f, my_peaks_ac, (int)d_padded_reference_correct.real_memory_allocated, psi, theta, phi, my_stats_ac, my_new_peaks_ac, view_counter);
-    UpdateMipPixelWiseKernel<<<d_padded_reference_wrong.gridDims, d_padded_reference_wrong.threadsPerBlock, 0, cudaStreamPerThread>>>((__half*)d_padded_reference_wrong.real_values_16f, my_peaks_cc, (int)d_padded_reference_wrong.real_memory_allocated, psi, theta, phi, my_stats_cc, my_new_peaks_cc, view_counter);
+    UpdateMipPixelWiseKernel<<<d_padded_reference_correct.gridDims, d_padded_reference_correct.threadsPerBlock, 0, cudaStreamPerThread>>>((__half*)d_padded_reference_correct.real_values_16f, my_peaks_ac, (int)d_padded_reference_correct.real_memory_allocated, psi, theta, phi, my_stats_ac, my_new_peaks_ac);
+    UpdateMipPixelWiseKernel<<<d_padded_reference_wrong.gridDims, d_padded_reference_wrong.threadsPerBlock, 0, cudaStreamPerThread>>>((__half*)d_padded_reference_wrong.real_values_16f, my_peaks_cc, (int)d_padded_reference_wrong.real_memory_allocated, psi, theta, phi, my_stats_cc, my_new_peaks_cc);
 
     postcheck
 }
 
 __global__ void
-UpdateMipPixelWiseKernel(__half* correlation_output, __half2* my_peaks, const int numel, __half psi, __half theta, __half phi, __half2* my_stats, __half2* my_new_peaks, const int view_counter) {
+UpdateMipPixelWiseKernel(__half* correlation_output, __half2* my_peaks, const int numel, __half psi, __half theta, __half phi, __half2* my_stats, __half2* my_new_peaks) {
 
     //	Peaks tmp_peak;
 
@@ -439,60 +478,60 @@ UpdateMipPixelWiseKernel(__half* correlation_output, __half2* my_peaks, const in
         const __half2 input    = __half2half2(half_val * __half(10000.0)); // cc*10000
         const __half2 mulVal   = __halves2half2((__half)1.0, half_val);
 
-        my_stats[i + view_counter * numel] = __hfma2(input, mulVal, my_stats[i + view_counter * numel]); // TODO check top_K script
+        my_stats[i] = __hfma2(input, mulVal, my_stats[i]); // TODO check top_K script
 
-        if ( half_val > __low2half(my_peaks[i + view_counter * numel]) ) {
+        if ( half_val > __low2half(my_peaks[i]) ) {
             //				tmp_peak.mip = half_val;
-            my_peaks[i + view_counter * numel]     = __halves2half2(half_val, psi);
-            my_new_peaks[i + view_counter * numel] = __halves2half2(theta, phi);
+            my_peaks[i]     = __halves2half2(half_val, psi);
+            my_new_peaks[i] = __halves2half2(theta, phi);
         }
     }
     //
 }
 
-__global__ void WriteMipToImageKernel(const __half2*, const __half2* my_new_peaks, const int, cufftReal*, const int);
+__global__ void WriteMipToImageKernel(const __half2*, const __half2* my_new_peaks, const int, cufftReal*);
 
-void TemplateSnrRatioCore::WriteMipToImage(int view_counter) {
+void TemplateSnrRatioCore::WriteMipToImage( ) {
 
     precheck
             dim3 threadsPerBlock = dim3(1024, 1, 1);
-    dim3         gridDims        = dim3((d_max_intensity_projection_ac.real_memory_allocated / d_max_intensity_projection_ac.dims.z + threadsPerBlock.x - 1) / threadsPerBlock.x, 1, 1); // CHECKME FIXME does gridDims matter? Do I really need to divide by z?
+    dim3         gridDims        = dim3((d_max_intensity_projection_ac.real_memory_allocated + threadsPerBlock.x - 1) / threadsPerBlock.x, 1, 1); // CHECKME FIXME does gridDims matter? Do I really need to divide by z?
 
-    WriteMipToImageKernel<<<gridDims, threadsPerBlock, 0, cudaStreamPerThread>>>(my_peaks_ac, my_new_peaks_ac, d_max_intensity_projection_ac.real_memory_allocated / d_max_intensity_projection_ac.dims.z, d_max_intensity_projection_ac.real_values_gpu, view_counter);
-    WriteMipToImageKernel<<<gridDims, threadsPerBlock, 0, cudaStreamPerThread>>>(my_peaks_cc, my_new_peaks_cc, d_max_intensity_projection_cc.real_memory_allocated / d_max_intensity_projection_ac.dims.z, d_max_intensity_projection_cc.real_values_gpu, view_counter);
+    WriteMipToImageKernel<<<gridDims, threadsPerBlock, 0, cudaStreamPerThread>>>(my_peaks_ac, my_new_peaks_ac, d_max_intensity_projection_ac.real_memory_allocated, d_max_intensity_projection_ac.real_values_gpu);
+    WriteMipToImageKernel<<<gridDims, threadsPerBlock, 0, cudaStreamPerThread>>>(my_peaks_cc, my_new_peaks_cc, d_max_intensity_projection_cc.real_memory_allocated, d_max_intensity_projection_cc.real_values_gpu);
 
     postcheck
 }
 
-__global__ void WriteMipToImageKernel(const __half2* my_peaks, const __half2* my_new_peaks, const int numel, cufftReal* mip, const int view_counter) {
+__global__ void WriteMipToImageKernel(const __half2* my_peaks, const __half2* my_new_peaks, const int numel, cufftReal* mip) {
 
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
 
     if ( x < numel ) {
-        mip[x + view_counter * numel] = (cufftReal)__low2float(my_peaks[x + view_counter * numel]);
+        mip[x] = (cufftReal)__low2float(my_peaks[x]);
     }
 }
 
-__global__ void UpdateSumsKernel(__half2* temp_my_stats, const int numel, cufftReal* sum, cufftReal* sq_sum, const int view_counter);
+__global__ void UpdateSumsKernel(__half2* temp_my_stats, const int numel, cufftReal* sum, cufftReal* sq_sum);
 
-void TemplateSnrRatioCore::UpdateSums(__half2* temp_my_stats, GpuImage& sum, GpuImage& sq_sum, const int view_counter) {
+void TemplateSnrRatioCore::UpdateSums(__half2* temp_my_stats, GpuImage& sum, GpuImage& sq_sum) {
 
     precheck
             dim3 threadsPerBlock = dim3(1024, 1, 1);
-    dim3         gridDims        = dim3((sum.real_memory_allocated / sum.dims.z + threadsPerBlock.x - 1) / threadsPerBlock.x, 1, 1);
+    dim3         gridDims        = dim3((sum.real_memory_allocated + threadsPerBlock.x - 1) / threadsPerBlock.x, 1, 1);
 
-    UpdateSumsKernel<<<gridDims, threadsPerBlock, 0, cudaStreamPerThread>>>(temp_my_stats, sum.real_memory_allocated / sum.dims.z, sum.real_values_gpu, sq_sum.real_values_gpu, view_counter);
+    UpdateSumsKernel<<<gridDims, threadsPerBlock, 0, cudaStreamPerThread>>>(temp_my_stats, sum.real_memory_allocated, sum.real_values_gpu, sq_sum.real_values_gpu);
     postcheck
 }
 
-__global__ void UpdateSumsKernel(__half2* temp_my_stats, const int numel, cufftReal* sum, cufftReal* sq_sum, const int view_counter) {
+__global__ void UpdateSumsKernel(__half2* temp_my_stats, const int numel, cufftReal* sum, cufftReal* sq_sum) {
 
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     if ( x < numel ) {
 
-        sum[x + numel * view_counter]    = __fmaf_rn(0.0001f, __low2float(temp_my_stats[x + numel * view_counter]), sum[x + numel * view_counter]);
-        sq_sum[x + numel * view_counter] = __fmaf_rn(0.0001f, __high2float(temp_my_stats[x + numel * view_counter]), sq_sum[x + numel * view_counter]);
+        sum[x]    = __fmaf_rn(0.0001f, __low2float(temp_my_stats[x]), sum[x]);
+        sq_sum[x] = __fmaf_rn(0.0001f, __high2float(temp_my_stats[x]), sq_sum[x]);
 
-        temp_my_stats[x + numel * view_counter] = __halves2half2((__half)0., (__half)0.);
+        temp_my_stats[x] = __halves2half2((__half)0., (__half)0.);
     }
 }

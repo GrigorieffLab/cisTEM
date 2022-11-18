@@ -16,6 +16,8 @@ class TemplateSnrRatioCore {
     int nThreads;
     int number_of_jobs_per_image_in_gui;
 
+    wxString data_directory_name;
+
     // CPU images to be passed in -
     Image input_reconstruction_particle, input_reconstruction_correct, input_reconstruction_wrong;
     Image current_projection_image, current_projection_correct_template, current_projection_other;
@@ -26,7 +28,7 @@ class TemplateSnrRatioCore {
     bool            is_graph_allocated = false;
 
     // These are assumed to be empty containers at the outset, so xfer host-->device is skipped
-    GpuImage d_max_intensity_projection_ac, d_max_intensity_projection_cc;
+    GpuImage d_max_intensity_projection_ac, d_max_intensity_projection_cc, d_max_intensity_projection_ac_all_views, d_max_intensity_projection_cc_all_views;
     GpuImage d_best_psi;
     GpuImage d_best_phi;
     GpuImage d_best_theta;
@@ -37,6 +39,7 @@ class TemplateSnrRatioCore {
     GpuImage d_sum1_cc, d_sum2_cc, d_sum3_cc, d_sum4_cc, d_sum5_cc;
     GpuImage d_sumSq1_ac, d_sumSq2_ac, d_sumSq3_ac, d_sumSq4_ac, d_sumSq5_ac;
     GpuImage d_sumSq1_cc, d_sumSq2_cc, d_sumSq3_cc, d_sumSq4_cc, d_sumSq5_cc;
+    GpuImage d_sum_ac, d_sum_cc, d_sumSq_ac, d_sumSq_cc; // all views
 
     bool is_allocated_sum_buffer = false;
     int  is_non_zero_sum_buffer;
@@ -81,10 +84,10 @@ class TemplateSnrRatioCore {
     __half2 *my_stats_ac, *my_stats_cc;
     __half2 *my_peaks_ac, *my_peaks_cc;
     __half2 *my_new_peaks_ac, *my_new_peaks_cc; // for passing euler angles to the callback
-    void     MipPixelWise(__half psi, __half theta, __half phi, const int view_counter);
+    void     MipPixelWise(__half psi, __half theta, __half phi);
 
-    void WriteMipToImage(int view_counter);
-    void UpdateSums(__half2* my_stats, GpuImage& sum, GpuImage& sq_sum, const int view_counter);
+    void WriteMipToImage( );
+    void UpdateSums(__half2* my_stats, GpuImage& sum, GpuImage& sq_sum);
 
     void Init(MyApp*           parent_pointer,
               Image&           input_reconstruction_particle,
@@ -111,7 +114,8 @@ class TemplateSnrRatioCore {
               long             total_correlation_positions_sampled_view,
               long             total_correlation_positions_sampled_view_per_thread,
               float            avg_for_normalization,
-              float            std_for_normalization);
+              float            std_for_normalization,
+              wxString data_directory_name);
 
     void RunInnerLoop(Image& projection_filter, int threadIDX, long& current_correlation_position_sampled_view);
 
