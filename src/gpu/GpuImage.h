@@ -262,7 +262,9 @@ class GpuImage {
 
     void AddImage(GpuImage& other_image);
 
-    void AddImageBySlice(GpuImage& other_image, const int numel, int k);
+    void AddImageBySlice(GpuImage& other_image, const int k);
+
+    void CopyFrom2DImageTo3DImage(GpuImage& other_3d_image, int index);
 
     void AddImage(GpuImage* other_image) { AddImage(*other_image); }; // for compatibility with Image class
 

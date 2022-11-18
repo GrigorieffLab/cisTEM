@@ -227,6 +227,9 @@ void TemplateSnrRatioCore::RunInnerLoop(Image& projection_filter, int threadIDX,
             //			current_projection.SetToConstant(0.0f); // This also sets the FFT padding to zero
 
             input_reconstruction_particle.ExtractSlice(current_projection_image, angles_sampled_view, 1.0f, false);
+
+            current_projection_image.complex_values[0] = 0.0f + I * 0.0f;
+
             current_projection_image.SwapRealSpaceQuadrants( );
             current_projection_image.MultiplyPixelWise(projection_filter);
             current_projection_image.BackwardFFT( );
@@ -276,17 +279,21 @@ void TemplateSnrRatioCore::RunInnerLoop(Image& projection_filter, int threadIDX,
                     angles_tm.Init(global_euler_search_tm.list_of_search_parameters[current_search_position_tm][0], global_euler_search_tm.list_of_search_parameters[current_search_position_tm][1], current_psi_tm, 0.0, 0.0);
                     // generate projection from testing template for tm
                     input_reconstruction_wrong.ExtractSlice(current_projection_other, angles_tm, 1.0f, false);
+                    current_projection_other.complex_values[0] = 0.0f + I * 0.0f;
                     current_projection_other.SwapRealSpaceQuadrants( );
                     current_projection_other.MultiplyPixelWise(projection_filter);
                     current_projection_other.BackwardFFT( );
-                    //average_on_edge  = current_projection_other.ReturnAverageOfRealValuesOnEdges( );
-                    average_of_reals = current_projection_other.ReturnAverageOfRealValues( );
-                    variance         = current_projection_other.ReturnSumOfSquares( ) - powf(current_projection_other.ReturnAverageOfRealValues( ), 2);
+                    average_on_edge  = current_projection_other.ReturnAverageOfRealValuesOnEdges( );
+                    average_of_reals = current_projection_other.ReturnAverageOfRealValues( ) - average_on_edge;
+
+                    //  variance = current_projection_other.ReturnSumOfSquares( ) - powf(current_projection_other.ReturnAverageOfRealValues( ), 2);
                     cudaStreamWaitEvent(cudaStreamPerThread, ref_wrong_projection_is_free_Event, 0);
                     //// TO THE GPU ////
                     d_current_projection_other.CopyHostToDevice( );
-                    d_current_projection_other.AddConstant(-average_of_reals);
-                    d_current_projection_other.MultiplyByConstant(rsqrtf(variance));
+                    d_current_projection_other.AddConstant(-average_on_edge);
+                    average_of_reals *= ((float)d_current_projection_other.number_of_real_space_pixels / (float)d_padded_reference_wrong.number_of_real_space_pixels);
+                    d_current_projection_other.MultiplyByConstant(rsqrtf(d_current_projection_other.ReturnSumOfSquares( ) / (float)d_padded_reference_wrong.number_of_real_space_pixels - (average_of_reals * average_of_reals)));
+
                     //current_projection_2.AddGaussianNoise(10.0f);
                     // Zeroing the central pixel is probably not doing anything useful...
                     // d_current_projection_other.ZeroCentralPixel( );
@@ -297,19 +304,24 @@ void TemplateSnrRatioCore::RunInnerLoop(Image& projection_filter, int threadIDX,
                     d_padded_reference_wrong.ForwardFFT(false);
 
                     input_reconstruction_correct.ExtractSlice(current_projection_correct_template, angles_tm, 1.0f, false);
+                    current_projection_correct_template.complex_values[0] = 0.0f + I * 0.0f;
                     current_projection_correct_template.SwapRealSpaceQuadrants( );
                     current_projection_correct_template.MultiplyPixelWise(projection_filter);
                     current_projection_correct_template.BackwardFFT( );
+                    average_on_edge = current_projection_correct_template.ReturnAverageOfRealValuesOnEdges( );
 
-                    average_of_reals = current_projection_correct_template.ReturnAverageOfRealValues( );
-                    variance         = current_projection_correct_template.ReturnSumOfSquares( ) - powf(current_projection_correct_template.ReturnAverageOfRealValues( ), 2);
+                    average_of_reals = current_projection_correct_template.ReturnAverageOfRealValues( ) - average_on_edge;
+                    // variance         = current_projection_correct_template.ReturnSumOfSquares( ) - powf(current_projection_correct_template.ReturnAverageOfRealValues( ), 2);
 
                     cudaStreamWaitEvent(cudaStreamPerThread, ref_correct_projection_is_free_Event, 0);
 
                     //// TO THE GPU ////
                     d_current_projection_correct_template.CopyHostToDevice( );
-                    d_current_projection_correct_template.AddConstant(-average_of_reals);
-                    d_current_projection_correct_template.MultiplyByConstant(rsqrtf(variance));
+                    d_current_projection_correct_template.AddConstant(-average_on_edge);
+                    average_of_reals *= ((float)d_current_projection_correct_template.number_of_real_space_pixels / (float)d_padded_reference_correct.number_of_real_space_pixels);
+                    d_current_projection_correct_template.MultiplyByConstant(rsqrtf(d_current_projection_correct_template.ReturnSumOfSquares( ) / (float)d_padded_reference_correct.number_of_real_space_pixels - (average_of_reals * average_of_reals)));
+
+                    // d_current_projection_correct_template.MultiplyByConstant(rsqrtf(variance));
                     //current_projection_2.AddGaussianNoise(10.0f);
 
                     d_current_projection_correct_template.ClipInto(&d_padded_reference_correct, 0, false, 0, 0, 0, 0);
@@ -416,7 +428,6 @@ void TemplateSnrRatioCore::RunInnerLoop(Image& projection_filter, int threadIDX,
             d_max_intensity_projection_ac.QuickAndDirtyWriteSlices(wxString::Format("%s/d_mip_ac_view_%i_%f.mrc", data_directory_name, view_counter, psi_step_tm).ToStdString( ), 1, 1);
             d_max_intensity_projection_cc.QuickAndDirtyWriteSlices(wxString::Format("%s/d_mip_cc_view_%i_%f.mrc", data_directory_name, view_counter, psi_step_tm).ToStdString( ), 1, 1);
 
-            exit(0);
             if ( ReturnThreadNumberOfCurrentThread( ) == 0 ) {
                 current_correlation_position_sampled_view++;
                 if ( current_correlation_position_sampled_view > total_correlation_positions_sampled_view_per_thread )

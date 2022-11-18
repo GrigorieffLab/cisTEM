@@ -1331,12 +1331,19 @@ void GpuImage::AddImage(GpuImage& other_image) {
     nppErr(nppiAdd_32f_C1IR_Ctx((const Npp32f*)other_image.real_values_gpu, pitch, (Npp32f*)real_values_gpu, pitch, npp_ROI, nppStream));
 }
 
-void GpuImage::AddImageBySlice(GpuImage& other_image, const int numel, int k) {
+void GpuImage::AddImageBySlice(GpuImage& other_image, const int k) {
     // Add the real_values_gpu into a double array
     MyAssertTrue(HasSameDimensionsAs(&other_image), "Images have different dimensions");
 
     NppInit( );
-    nppErr(nppiAdd_32f_C1IR_Ctx((const Npp32f*)&other_image.real_values_gpu[numel * k], pitch, (Npp32f*)&real_values_gpu[numel * k], pitch, npp_ROI, nppStream));
+    nppErr(nppiAdd_32f_C1IR_Ctx((const Npp32f*)&other_image.real_values_gpu[k], pitch, (Npp32f*)&real_values_gpu[k], pitch, npp_ROI, nppStream)); // the address of the first byte of element at index numel
+    //nppErr(nppiAdd_32f_C1IR_Ctx((const Npp32f*)&other_image.real_values_gpu[0], pitch, (Npp32f*)&real_values_gpu[0], pitch, npp_ROI, nppStream));
+}
+
+void GpuImage::CopyFrom2DImageTo3DImage(GpuImage& other_3d_image, int index) {
+    precheck
+            cudaErr(cudaMemcpyAsync(&other_3d_image.real_values_gpu[index], real_values_gpu, sizeof(cufftReal) * real_memory_allocated, cudaMemcpyDeviceToDevice, cudaStreamPerThread));
+    postcheck
 }
 
 void GpuImage::SubtractImage(GpuImage& other_image) {
