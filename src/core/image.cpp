@@ -7637,6 +7637,45 @@ void Image::InsertOtherImageAtSpecifiedPosition(Image* other_image, int wanted_x
     }
 }
 
+void Image::InsertOtherImageAtSpecifiedSlice(Image* other_image, int wanted_z_coord, float threshold_value) {
+    MyDebugAssertTrue(is_in_memory, "Memory not allocated");
+    MyDebugAssertTrue(other_image->is_in_memory, "Other image Memory not allocated");
+    MyDebugAssertTrue(is_in_real_space == true, "Only real space make sense");
+
+    int kk;
+    int k;
+    int kk_logi;
+
+    int jj;
+    int jj_logi;
+    int j;
+
+    int ii;
+    int ii_logi;
+    int i;
+
+    long pixel_counter = 0;
+
+    for ( jj = 0; jj < other_image->logical_y_dimension; jj++ ) {
+        //jj_logi = jj - other_image->physical_address_of_box_center_y - 1;
+
+        for ( ii = 0; ii < other_image->logical_x_dimension; ii++ ) {
+            //ii_logi = ii - other_image->physical_address_of_box_center_x - 1;
+
+            if ( wanted_z_coord < 0 || wanted_z_coord >= logical_z_dimension || jj < 0 || jj >= logical_y_dimension || ii < 0 || ii >= logical_x_dimension ) {
+            }
+            else {
+                if ( other_image->real_values[pixel_counter] > threshold_value )
+                    real_values[ReturnReal1DAddressFromPhysicalCoord(ii, jj, wanted_z_coord)] += other_image->real_values[pixel_counter];
+            }
+
+            pixel_counter++;
+        }
+
+        pixel_counter += other_image->padding_jump_value;
+    }
+}
+
 // If you don't want to clip from the center, you can give wanted_coordinate_of_box_center_{x,y,z}. This will define the pixel in the image at which other_image will be centered. (0,0,0) means center of image.
 void Image::ClipInto(Image* other_image, float wanted_padding_value, bool fill_with_noise, float wanted_noise_sigma, int wanted_coordinate_of_box_center_x, int wanted_coordinate_of_box_center_y, int wanted_coordinate_of_box_center_z) {
     MyDebugAssertTrue(is_in_memory, "Memory not allocated");

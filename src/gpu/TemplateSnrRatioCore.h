@@ -19,16 +19,16 @@ class TemplateSnrRatioCore {
     wxString data_directory_name;
 
     // CPU images to be passed in -
-    Image input_reconstruction_particle, input_reconstruction_correct, input_reconstruction_wrong;
-    Image current_projection_image, current_projection_correct_template, current_projection_other;
-    Image input_image; // These will be modified on the host from withing Template Matching Core so Allocate locally
+    Image input_reconstruction_correct, input_reconstruction_wrong;
+    Image current_projection_correct_template, current_projection_other;
+    Image montage_image; // These will be modified on the host from withing Template Matching Core so Allocate locally
 
     cudaGraph_t     graph;
     cudaGraphExec_t graphExec;
     bool            is_graph_allocated = false;
 
     // These are assumed to be empty containers at the outset, so xfer host-->device is skipped
-    GpuImage d_max_intensity_projection_ac, d_max_intensity_projection_cc, d_max_intensity_projection_ac_all_views, d_max_intensity_projection_cc_all_views;
+    GpuImage d_max_intensity_projection_ac, d_max_intensity_projection_cc;
     GpuImage d_best_psi;
     GpuImage d_best_phi;
     GpuImage d_best_theta;
@@ -39,14 +39,14 @@ class TemplateSnrRatioCore {
     GpuImage d_sum1_cc, d_sum2_cc, d_sum3_cc, d_sum4_cc, d_sum5_cc;
     GpuImage d_sumSq1_ac, d_sumSq2_ac, d_sumSq3_ac, d_sumSq4_ac, d_sumSq5_ac;
     GpuImage d_sumSq1_cc, d_sumSq2_cc, d_sumSq3_cc, d_sumSq4_cc, d_sumSq5_cc;
-    GpuImage d_sum_ac, d_sum_cc, d_sumSq_ac, d_sumSq_cc; // all views
 
     bool is_allocated_sum_buffer = false;
     int  is_non_zero_sum_buffer;
     // This will need to be copied in
-    GpuImage d_input_image;
-    GpuImage d_current_projection_image, d_current_projection_correct_template, d_current_projection_other;
-    GpuImage d_padded_image, d_padded_reference_correct, d_padded_reference_wrong;
+    Image    current_projection_correct, current_projection_wrong;
+    GpuImage d_montage_image;
+    GpuImage d_current_projection_correct, d_current_projection_wrong;
+    GpuImage d_padded_reference_correct, d_padded_reference_wrong;
 
     //GpuImage d_padded_reference;
 
@@ -54,28 +54,22 @@ class TemplateSnrRatioCore {
     float pixel_size;
     float psi_max;
     float psi_start;
-    float psi_step_sampled_view;
-    float psi_step_tm;
+    float psi_step;
 
-    int current_search_position_sampled_view;
-    int current_search_position_tm;
+    int current_search_position;
 
-    int number_of_rotations_sampled_view;
-    int number_of_rotations_tm;
+    int number_of_rotations;
 
-    int first_search_position_sampled_view;
-    int last_search_position_sampled_view;
-    int first_search_position_tm;
-    int last_search_position_tm;
+    int first_search_position;
+    int last_search_position;
 
-    long total_correlation_positions_sampled_view, total_correlation_positions_sampled_view_per_thread;
+    long total_correlation_positions, total_correlation_positions_per_thread;
 
-    float avg_for_normalization, std_for_normalization;
-    long  total_number_of_cccs_calculated;
+    long total_number_of_cccs_calculated;
 
     // Search objects
-    AnglesAndShifts angles_sampled_view, angles_tm;
-    EulerSearch     global_euler_search_sampled_view, global_euler_search_tm;
+    AnglesAndShifts angles;
+    EulerSearch     global_euler_search;
 
     ProgressBar* my_progress;
 
@@ -86,36 +80,27 @@ class TemplateSnrRatioCore {
     __half2 *my_new_peaks_ac, *my_new_peaks_cc; // for passing euler angles to the callback
     void     MipPixelWise(__half psi, __half theta, __half phi);
 
-    void WriteMipToImage( );
+    void MipToImage( );
     void UpdateSums(__half2* my_stats, GpuImage& sum, GpuImage& sq_sum);
 
     void Init(MyApp*           parent_pointer,
-              Image&           input_reconstruction_particle,
               Image&           input_reconstruction_correct,
               Image&           input_reconstruction_wrong,
-              Image&           input_image,
-              Image&           current_projection_image,
-              Image&           current_projection_correct_template,
+              Image&           montage_image,
+              Image&           current_projection_correct,
               Image&           current_projection_wrong,
               float            psi_max,
               float            psi_start,
-              float            psi_step_sampled_view,
-              float            psi_step_tm,
-              AnglesAndShifts& angles_sampled_view,
-              AnglesAndShifts& angles_tm,
-              EulerSearch&     global_euler_search_sampled_view,
-              EulerSearch&     global_euler_search_tm,
-              int              first_search_position_sampled_view,
-              int              last_search_position_sampled_view,
-              int              first_search_position_tm,
-              int              last_search_position_tm,
+              float            psi_step,
+              AnglesAndShifts& angles,
+              EulerSearch&     global_euler_search,
+              int              first_search_position,
+              int              last_search_position,
               ProgressBar*     my_progress,
-              int              number_of_rotations_sampled_view,
-              long             total_correlation_positions_sampled_view,
-              long             total_correlation_positions_sampled_view_per_thread,
-              float            avg_for_normalization,
-              float            std_for_normalization,
-              wxString data_directory_name);
+              int              number_of_rotations,
+              long             total_correlation_positions,
+              long             total_correlation_positions_per_thread,
+              wxString         data_directory_name);
 
     void RunInnerLoop(Image& projection_filter, int threadIDX, long& current_correlation_position_sampled_view);
 
