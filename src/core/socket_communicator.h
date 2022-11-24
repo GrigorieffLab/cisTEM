@@ -4,6 +4,7 @@ class SocketClientMonitorThread;
 wxDEFINE_EVENT(wxEVT_SOCKET_SERVER_EVENT, wxThreadEvent);
 WX_DEFINE_ARRAY(wxSocketBase*, ArrayOfSocketPointers);
 
+
 class SocketCommunicator {
   protected:
     SocketServerThread*        server_thread;
@@ -120,6 +121,14 @@ class SocketServerThread : public wxThread {
     virtual ExitCode Entry( );
 };
 
+struct SocketRemainingDefinedResult {
+    float* data_array;
+    int    size_of_data_array;
+    int    size_of_remaining_data_array;
+    int    result_number;
+    int    number_of_expected_results;
+};
+
 class SocketClientMonitorThread : public wxThread {
   public:
     SocketClientMonitorThread(SocketCommunicator* handler) : wxThread(wxTHREAD_DETACHED) { parent_pointer = handler; }
@@ -132,6 +141,8 @@ class SocketClientMonitorThread : public wxThread {
     ArrayOfSocketPointers sockets_to_add_next_cycle;
     ArrayOfSocketPointers sockets_to_remove_next_cycle;
     ArrayOfSocketPointers sockets_to_remove_and_destroy_next_cycle;
+
+    std::map<wxSocketBase*, SocketRemainingDefinedResult> socket_to_remaining_defined_result_data;
 
     MRCFile buffered_output_file; // for writing directly in the HandleSocketResultWithImageToWrite sequence.
 

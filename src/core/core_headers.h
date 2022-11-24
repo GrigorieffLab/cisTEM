@@ -45,6 +45,7 @@ const std::complex<float> I(0.0, 1.0);
 #include <utility>
 #include <vector>
 #include <random>
+#include <map>
 #include <functional>
 #include <fftw3.h>
 #include <math.h>
