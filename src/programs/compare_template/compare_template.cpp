@@ -40,6 +40,7 @@ void CompareTemplateApp::DoInteractiveUserInput( ) {
     float    in_plane_angular_step_tm       = 0;
     int      max_threads                    = 1;
     bool     use_gpu_input                  = false;
+    int      number_of_sampled_views        = 30;
 
     UserInput* my_input = new UserInput("CompareTemplate", 1.00);
 
@@ -67,15 +68,16 @@ void CompareTemplateApp::DoInteractiveUserInput( ) {
     use_gpu_input = my_input->GetYesNoFromUser("Use GPU", "Offload expensive calcs to GPU", "No");
     max_threads   = my_input->GetIntFromUser("Max. threads to use for calculation", "when threading, what is the max threads to run", "1", 1);
 #endif
-    scaled_mip_ac_filename = my_input->GetFilenameFromUser("Output scaled mip image ac", "Output scaled mip image ac", "scaled_mip_ac.mrc", false);
-    scaled_mip_cc_filename = my_input->GetFilenameFromUser("Output scaled mip image cc", "Output scaled mip image ac", "scaled_mip_cc.mrc", false);
-    mip_ac_filename        = my_input->GetFilenameFromUser("Output mip image ac", "Output mip image ac", "mip_ac.mrc", false);
-    mip_cc_filename        = my_input->GetFilenameFromUser("Output mip image cc", "Output mip image cc", "mip_cc.mrc", false);
-    avg_ac_filename        = my_input->GetFilenameFromUser("Output avg image ac", "Output avg image ac", "avg_ac.mrc", false);
-    avg_cc_filename        = my_input->GetFilenameFromUser("Output avg image cc", "Output avg image cc", "avg_cc.mrc", false);
-    std_ac_filename        = my_input->GetFilenameFromUser("Output std image ac", "Output std image ac", "std_cc.mrc", false);
-    std_cc_filename        = my_input->GetFilenameFromUser("Output std image cc", "Output std image cc", "std_cc.mrc", false);
-    data_directory_name    = my_input->GetFilenameFromUser("Name for data directory", "path to data directory", "60_120_5_2.5", false);
+    scaled_mip_ac_filename  = my_input->GetFilenameFromUser("Output scaled mip image ac", "Output scaled mip image ac", "scaled_mip_ac.mrc", false);
+    scaled_mip_cc_filename  = my_input->GetFilenameFromUser("Output scaled mip image cc", "Output scaled mip image ac", "scaled_mip_cc.mrc", false);
+    mip_ac_filename         = my_input->GetFilenameFromUser("Output mip image ac", "Output mip image ac", "mip_ac.mrc", false);
+    mip_cc_filename         = my_input->GetFilenameFromUser("Output mip image cc", "Output mip image cc", "mip_cc.mrc", false);
+    avg_ac_filename         = my_input->GetFilenameFromUser("Output avg image ac", "Output avg image ac", "avg_ac.mrc", false);
+    avg_cc_filename         = my_input->GetFilenameFromUser("Output avg image cc", "Output avg image cc", "avg_cc.mrc", false);
+    std_ac_filename         = my_input->GetFilenameFromUser("Output std image ac", "Output std image ac", "std_cc.mrc", false);
+    std_cc_filename         = my_input->GetFilenameFromUser("Output std image cc", "Output std image cc", "std_cc.mrc", false);
+    data_directory_name     = my_input->GetFilenameFromUser("Name for data directory", "path to data directory", "60_120_5_2.5", false);
+    number_of_sampled_views = my_input->GetIntFromUser("Number of sampled views", "number of sampled views", "1", 1, 400);
 
     int first_search_position             = -1;
     int last_search_position_sampled_view = -1;
@@ -83,7 +85,7 @@ void CompareTemplateApp::DoInteractiveUserInput( ) {
 
     delete my_input;
 
-    my_current_job.ManualSetArguments("ttttfffffffffifftfiiffitbittttttttt",
+    my_current_job.ManualSetArguments("ttttfffffffffifftfiiffitbittttttttti",
                                       input_search_images.ToUTF8( ).data( ),
                                       input_reconstruction_particle_filename.ToUTF8( ).data( ),
                                       input_reconstruction_correct_filename.ToUTF8( ).data( ),
@@ -118,7 +120,8 @@ void CompareTemplateApp::DoInteractiveUserInput( ) {
                                       avg_cc_filename.ToUTF8( ).data( ),
                                       std_ac_filename.ToUTF8( ).data( ),
                                       std_cc_filename.ToUTF8( ).data( ),
-                                      data_directory_name.ToUTF8( ).data( ));
+                                      data_directory_name.ToUTF8( ).data( ),
+                                      number_of_sampled_views);
 }
 
 // override the do calculation method which will be what is actually run..
@@ -160,6 +163,7 @@ bool CompareTemplateApp::DoCalculation( ) {
     wxString std_ac_filename                   = my_current_job.arguments[32].ReturnStringArgument( );
     wxString std_cc_filename                   = my_current_job.arguments[33].ReturnStringArgument( );
     wxString data_directory_name               = my_current_job.arguments[34].ReturnStringArgument( );
+    int      number_of_sampled_views           = my_current_job.arguments[35].ReturnIntegerArgument( );
 
     // This condition applies to GUI and CLI - it is just a recommendation to the user.
     if ( use_gpu && max_threads <= 1 ) {
@@ -235,17 +239,21 @@ bool CompareTemplateApp::DoCalculation( ) {
     current_correlation_position_sampled_view = 0;
     current_correlation_position_tm           = 0;
 
-    for ( current_search_position_sampled_view = first_search_position; current_search_position_sampled_view <= last_search_position_sampled_view; current_search_position_sampled_view++ ) {
-        //loop over each rotation angle
+    float* psi_tm;
+    float* theta_tm;
+    float* phi_tm;
 
-        for ( current_psi_sampled_view = psi_start; current_psi_sampled_view <= psi_max; current_psi_sampled_view += psi_step_sampled_view ) {
-            total_correlation_positions_sampled_view++;
-        }
-    }
+    //  for ( current_search_position_sampled_view = first_search_position; current_search_position_sampled_view <= last_search_position_sampled_view; current_search_position_sampled_view++ ) {
+    //loop over each rotation angle
 
-    for ( current_psi_sampled_view = psi_start; current_psi_sampled_view <= psi_max; current_psi_sampled_view += psi_step_sampled_view ) {
-        number_of_rotations_sampled_view++;
-    }
+    //     for ( current_psi_sampled_view = psi_start; current_psi_sampled_view <= psi_max; current_psi_sampled_view += psi_step_sampled_view ) {
+    //         total_correlation_positions_sampled_view++;
+    //     }
+    // }
+
+    // for ( current_psi_sampled_view = psi_start; current_psi_sampled_view <= psi_max; current_psi_sampled_view += psi_step_sampled_view ) {
+    //     number_of_rotations_sampled_view++;
+    // }
 
     for ( current_search_position_tm = first_search_position; current_search_position_tm <= last_search_position_tm; current_search_position_tm++ ) {
         //loop over each rotation angle
@@ -259,15 +267,51 @@ bool CompareTemplateApp::DoCalculation( ) {
         number_of_rotations_tm++;
     }
 
-    wxPrintf("Outside Loop - sampled views in an image:\n");
-    wxPrintf("Searching %i positions on the Euler sphere (first-last: %i-%i)\n", last_search_position_sampled_view - first_search_position, first_search_position, last_search_position_sampled_view);
-    wxPrintf("Searching %i rotations per position.\n", number_of_rotations_sampled_view);
-    wxPrintf("There are %li correlation positions total.\n\n", total_correlation_positions_sampled_view);
+    // wxPrintf("Outside Loop - sampled views in an image:\n");
+    // wxPrintf("Searching %i positions on the Euler sphere (first-last: %i-%i)\n", last_search_position_sampled_view - first_search_position, first_search_position, last_search_position_sampled_view);
+    // wxPrintf("Searching %i rotations per position.\n", number_of_rotations_sampled_view);
+    // wxPrintf("There are %li correlation positions total.\n\n", total_correlation_positions_sampled_view);
 
-    wxPrintf("Inside Loop - tm rotations:\n");
+    wxPrintf("TM step sizes:\n");
     wxPrintf("Searching %i positions on the Euler sphere (first-last: %i-%i)\n", last_search_position_tm - first_search_position, first_search_position, last_search_position_tm);
     wxPrintf("Searching %i rotations per position.\n", number_of_rotations_tm);
     wxPrintf("There are %li correlation positions total.\n\n", total_correlation_positions_tm);
+
+    psi_tm   = new float[number_of_rotations_tm];
+    theta_tm = new float[last_search_position_tm - first_search_position + 1];
+    phi_tm   = new float[last_search_position_tm - first_search_position + 1];
+
+    for ( int k = 0; k < number_of_rotations_tm; k++ ) {
+        psi_tm[k] = psi_start + psi_step_tm * k;
+        wxPrintf("psi = %f\n", psi_tm[k]);
+    }
+    for ( int k = first_search_position; k <= last_search_position_tm; k++ ) {
+        phi_tm[k]   = global_euler_search_tm.list_of_search_parameters[k][0];
+        theta_tm[k] = global_euler_search_tm.list_of_search_parameters[k][1];
+        wxPrintf("theta phi = %f %f\n", phi_tm[k], theta_tm[k]);
+    }
+
+    /*
+    //convergence test
+    for ( current_search_position_sampled_view = first_search_position; current_search_position_sampled_view <= last_search_position_sampled_view; current_search_position_sampled_view++ ) {
+        //loop over each rotation angle
+
+        for ( current_psi_sampled_view = psi_start; current_psi_sampled_view <= psi_max; current_psi_sampled_view += psi_step_sampled_view ) {
+            wxPrintf("outer loop : %f %f %f\n", global_euler_search_sampled_view.list_of_search_parameters[current_search_position_sampled_view][0], global_euler_search_sampled_view.list_of_search_parameters[current_search_position_sampled_view][1], current_psi_sampled_view);
+
+            for ( current_search_position_tm = first_search_position; current_search_position_tm <= last_search_position_tm; current_search_position_tm++ ) {
+                //loop over each rotation angle
+
+                for ( current_psi_tm = psi_start; current_psi_tm <= psi_max; current_psi_tm += psi_step_tm ) {
+
+                    if ( current_psi_sampled_view == current_psi_tm && global_euler_search_tm.list_of_search_parameters[current_search_position_tm][0] == global_euler_search_sampled_view.list_of_search_parameters[current_search_position_sampled_view][0] && global_euler_search_tm.list_of_search_parameters[current_search_position_tm][1] == global_euler_search_sampled_view.list_of_search_parameters[current_search_position_sampled_view][1] ) {
+                        wxPrintf("outer in inside\n");
+                    }
+                }
+            }
+        }
+    }
+    */
 
     // These vars are only needed in the GPU code, but also need to be set out here to compile.
     // update GPU setup to "inner" loop only - for tm search
@@ -346,7 +390,7 @@ bool CompareTemplateApp::DoCalculation( ) {
     input_reconstruction_wrong.ZeroCentralPixel( );
     input_reconstruction_wrong.SwapRealSpaceQuadrants( );
 
-    montage_image_stack.Allocate(input_reconstruction_particle_file.ReturnXSize( ), input_reconstruction_particle_file.ReturnXSize( ), int(total_correlation_positions_sampled_view));
+    montage_image_stack.Allocate(input_reconstruction_particle_file.ReturnXSize( ), input_reconstruction_particle_file.ReturnXSize( ), number_of_sampled_views);
 
     int   j = 0, view_counter = 0;
     int   current_x, current_y;
@@ -354,9 +398,34 @@ bool CompareTemplateApp::DoCalculation( ) {
     float ac_val, ac_max, cc_val, cc_max;
 
     // generate particle montage
+    srand(10);
     current_projection_image.Allocate(input_reconstruction_particle_file.ReturnXSize( ), input_reconstruction_particle_file.ReturnXSize( ), 1, false);
     if ( padding != 1.0f )
         padded_projection_image.Allocate(input_reconstruction_particle_file.ReturnXSize( ) * padding, input_reconstruction_particle_file.ReturnXSize( ) * padding, false);
+    for ( int K = 0; K < number_of_sampled_views; K++ ) {
+        int k1 = rand( ) % number_of_rotations_tm;
+        int k2 = rand( ) % (last_search_position_tm - first_search_position + 1);
+        wxPrintf("sampling view @ %f %f %f\n", phi_tm[k2], theta_tm[k2], psi_tm[k1]);
+
+        angles_sampled_view.Init(phi_tm[k2], theta_tm[k2], psi_tm[k1], 0.0, 0.0);
+        // generate particle from sampled view (in TM we applied projection filter first then normalized the templates)
+        if ( padding != 1.0f ) {
+            input_reconstruction_particle.ExtractSlice(padded_projection_image, angles_sampled_view, 1.0f, false);
+            padded_projection_image.SwapRealSpaceQuadrants( );
+            padded_projection_image.BackwardFFT( );
+            padded_projection_image.ClipInto(&current_projection_image);
+            current_projection_image.ForwardFFT( );
+        }
+        else {
+            input_reconstruction_particle.ExtractSlice(current_projection_image, angles_sampled_view, 1.0f, false);
+            current_projection_image.SwapRealSpaceQuadrants( );
+        }
+        current_projection_image.MultiplyPixelWise(projection_filter);
+        current_projection_image.BackwardFFT( );
+        montage_image_stack.InsertOtherImageAtSpecifiedSlice(&current_projection_image, K);
+    }
+
+    /*
     for ( current_search_position_sampled_view = first_search_position; current_search_position_sampled_view <= last_search_position_sampled_view; current_search_position_sampled_view++ ) {
         for ( j = 0; j < number_of_rotations_sampled_view; j++ ) {
             current_psi_sampled_view = psi_start + j * psi_step_sampled_view;
@@ -381,10 +450,11 @@ bool CompareTemplateApp::DoCalculation( ) {
             view_counter++;
         }
     }
-    montage_image_stack.QuickAndDirtyWriteSlices(wxString::Format("%s/montage_stack.mrc", data_directory_name).ToStdString( ), 1, view_counter);
+    */
+    montage_image_stack.QuickAndDirtyWriteSlices(wxString::Format("%s/montage_stack_%f_%f_%i_.mrc", data_directory_name, psi_step_tm, angular_step_tm, number_of_sampled_views).ToStdString( ), 1, number_of_sampled_views);
     // convert stack to montage
-    int montage_dim_x = montage_image_stack.logical_x_dimension * (last_search_position_sampled_view - first_search_position + 1);
-    int montage_dim_y = montage_image_stack.logical_y_dimension * number_of_rotations_sampled_view;
+    int montage_dim_x = montage_image_stack.logical_x_dimension * int(sqrt(number_of_sampled_views)); //(last_search_position_sampled_view - first_search_position + 1);
+    int montage_dim_y = montage_image_stack.logical_y_dimension * int(sqrt(number_of_sampled_views)); //number_of_rotations_sampled_view;
     montage_image.Allocate(montage_dim_x, montage_dim_y, true);
     montage_image.SetToConstant(0.0f);
     double* correlation_pixel_sum_ac            = new double[montage_image.real_memory_allocated];
@@ -422,12 +492,11 @@ bool CompareTemplateApp::DoCalculation( ) {
 
     int       image_counter = 0;
     ImageFile montage_stack_file;
-    montage_stack_file.OpenFile(wxString::Format("%s/montage_stack.mrc", data_directory_name).ToStdString( ), false);
-    for ( image_counter_y = 0; image_counter_y < number_of_rotations_sampled_view; image_counter_y++ ) {
-
+    montage_stack_file.OpenFile(wxString::Format("%s/montage_stack_%f_%f_%i_.mrc", data_directory_name, psi_step_tm, angular_step_tm, number_of_sampled_views).ToStdString( ), false);
+    for ( image_counter_y = 0; image_counter_y < int(sqrt(number_of_sampled_views)); image_counter_y++ ) {
         j_start_output = image_counter_y * montage_image_stack.logical_y_dimension;
 
-        for ( image_counter_x = 0; image_counter_x < (last_search_position_sampled_view - first_search_position + 1); image_counter_x++ ) {
+        for ( image_counter_x = 0; image_counter_x < int(sqrt(number_of_sampled_views)); image_counter_x++ ) {
 
             i_start_output = image_counter_x * montage_image_stack.logical_x_dimension;
 
@@ -445,7 +514,7 @@ bool CompareTemplateApp::DoCalculation( ) {
                         attenuation_y = 1.0 / float(overlap + 1) * (j_input + 1);
                 }
                 else if ( j_input >= input_slice.logical_y_dimension - overlap ) {
-                    if ( image_counter_y < number_of_rotations_sampled_view - 1 )
+                    if ( image_counter_y < int(sqrt(number_of_sampled_views)) - 1 )
                         attenuation_y = 1.0 / float(overlap + 1) * (input_slice.logical_y_dimension - j_input);
                 }
 
@@ -457,7 +526,7 @@ bool CompareTemplateApp::DoCalculation( ) {
                             attenuation_x = 1.0 / float(overlap + 1) * (i_input + 1);
                     }
                     else if ( i_input >= input_slice.logical_x_dimension - overlap ) {
-                        if ( image_counter_x < (last_search_position_sampled_view - first_search_position + 1) - 1 )
+                        if ( image_counter_x < int(sqrt(number_of_sampled_views)) - 1 )
                             attenuation_x = 1.0 / float(overlap + 1) * (input_slice.logical_x_dimension - i_input);
                     }
 
@@ -468,7 +537,7 @@ bool CompareTemplateApp::DoCalculation( ) {
             }
         }
     }
-    montage_image.QuickAndDirtyWriteSlice(wxString::Format("%s/montage.mrc", data_directory_name).ToStdString( ), 1);
+    montage_image.QuickAndDirtyWriteSlice(wxString::Format("%s/montage_%f_%f_%i_.mrc", data_directory_name, psi_step_tm, angular_step_tm, number_of_sampled_views).ToStdString( ), 1);
 
     // montage_image.AddNoise(GAUSSIAN, 0, 0.0001f);
     // montage_image.QuickAndDirtyWriteSlice(wxString::Format("%s/montage_with_noise_0.0001f.mrc", data_directory_name).ToStdString( ), 1);
@@ -482,7 +551,7 @@ bool CompareTemplateApp::DoCalculation( ) {
     montage_image.ZeroCentralPixel( ); // equivalent to subtracting mean in real space
 
     montage_image.DivideByConstant(sqrtf(montage_image.ReturnSumOfSquares( )));
-    montage_image.QuickAndDirtyWriteSlice(wxString::Format("%s/montage_scaled.mrc", data_directory_name).ToStdString( ), 1);
+    montage_image.QuickAndDirtyWriteSlice(wxString::Format("%s/montage_scaled_%f_%f_%i_.mrc", data_directory_name, psi_step_tm, angular_step_tm, number_of_sampled_views).ToStdString( ), 1);
 
     // allocate current_projection before gpu code
     // use particle to determine size since template volumes may be padded
