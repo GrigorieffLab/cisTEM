@@ -632,25 +632,25 @@ bool MatchTemplateApp::DoCalculation( ) {
     }
 
     //psi_start = psi_step / 2.0 * global_random_number_generator.GetUniformRandom();
-    psi_start = 0.0f;
-    psi_max   = 360.0f;
+    psi_start = 195.0f; //203.8
+    psi_max   = 210.0f;
 
     //psi_step = 5;
 
     //wxPrintf("psi_start = %f, psi_max = %f, psi_step = %f\n", psi_start, psi_max, psi_step);
 
     // search grid
-
-    global_euler_search.InitGrid(my_symmetry, angular_step, 0.0f, 0.0f, psi_max, psi_step, psi_start, pixel_size / high_resolution_limit_search, parameter_map, best_parameters_to_keep);
+    // theta = 57.3 phi = 193.98
+    global_euler_search.InitConstrainedGrid(my_symmetry, angular_step, 180.0f, 210.0f, 50.0f, 65.0f, psi_max, psi_step, psi_start, pixel_size / high_resolution_limit_search, parameter_map, best_parameters_to_keep);
     if ( my_symmetry.StartsWith("C") ) // TODO 2x check me - w/o this O symm at least is broken
     {
         if ( global_euler_search.test_mirror == true ) // otherwise the theta max is set to 90.0 and test_mirror is set to true.  However, I don't want to have to test the mirrors.
         {
-            global_euler_search.theta_max = 180.0f;
+            //global_euler_search.theta_max = 180.0f;
         }
     }
 
-    global_euler_search.CalculateGridSearchPositions(false);
+    global_euler_search.CalculateConstrainedGridSearchPositions(false);
 
     // for now, I am assuming the MTF has been applied already.
     // work out the filter to just whiten the image..
@@ -667,7 +667,7 @@ bool MatchTemplateApp::DoCalculation( ) {
     input_image.ForwardFFT( );
     input_image.SwapRealSpaceQuadrants( );
 
-    input_image.ZeroCentralPixel( );
+    input_image.ZeroCentralPixel( ); // equivalent to subtracting mean in real space
     input_image.Compute1DPowerSpectrumCurve(&whitening_filter, &number_of_terms);
     whitening_filter.SquareRoot( );
     whitening_filter.Reciprocal( );
@@ -675,7 +675,7 @@ bool MatchTemplateApp::DoCalculation( ) {
 
     //whitening_filter.WriteToFile("/tmp/filter.txt");
     input_image.ApplyCurveFilter(&whitening_filter);
-    input_image.ZeroCentralPixel( );
+    input_image.ZeroCentralPixel( ); // redundant?
     input_image.DivideByConstant(sqrtf(input_image.ReturnSumOfSquares( )));
     //input_image.QuickAndDirtyWriteSlice("/tmp/white.mrc", 1);
     //exit(-1);
@@ -695,7 +695,7 @@ bool MatchTemplateApp::DoCalculation( ) {
     // TODO unroll these loops and multiply the product.
     for ( current_search_position = first_search_position; current_search_position <= last_search_position; current_search_position++ ) {
         //loop over each rotation angle
-
+        wxPrintf("phi theta = %f %f \n", global_euler_search.list_of_search_parameters[current_search_position][0], global_euler_search.list_of_search_parameters[current_search_position][1]);
         for ( current_psi = psi_start; current_psi <= psi_max; current_psi += psi_step ) {
             total_correlation_positions++;
         }
@@ -718,6 +718,7 @@ bool MatchTemplateApp::DoCalculation( ) {
 
     for ( current_psi = psi_start; current_psi <= psi_max; current_psi += psi_step ) {
         number_of_rotations++;
+        wxPrintf("psi = %f\n", current_psi);
     }
 
     ProgressBar* my_progress;
@@ -731,6 +732,7 @@ bool MatchTemplateApp::DoCalculation( ) {
 
     wxPrintf("Performing Search...\n\n");
 
+    NumericTextFile cc_file("recorded_cc_at_center.txt", OPEN_TO_WRITE, 1);
     //    wxPrintf("Searching %i - %i of %i total positions\n", first_search_position, last_search_position, global_euler_search.number_of_search_positions);
     //    wxPrintf("psi_start = %f, psi_max = %f, psi_step = %f\n", psi_start, psi_max, psi_step);
 
@@ -1003,6 +1005,11 @@ bool MatchTemplateApp::DoCalculation( ) {
 #endif
 
                     padded_reference.BackwardFFT( );
+                    cc_file.WriteCommentLine("%f\n", padded_reference.ReturnCentralPixelValue( ));
+                    wxPrintf("max = %f central = %f\n", padded_reference.ReturnMaximumValue( ), padded_reference.ReturnCentralPixelValue( ));
+                    padded_reference.QuickAndDirtyWriteSlice("first_cc.mrc", 1);
+                    exit(0);
+
                     //                    padded_reference.QuickAndDirtyWriteSlice("cc.mrc", 1);
                     //                    exit(0);
 
