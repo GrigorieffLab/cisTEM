@@ -41,6 +41,7 @@ void CompareTemplateApp::DoInteractiveUserInput( ) {
     int      max_threads                    = 1;
     bool     use_gpu_input                  = false;
     int      number_of_sampled_views        = 30;
+    int      result_number;
 
     UserInput* my_input = new UserInput("CompareTemplate", 1.00);
 
@@ -78,6 +79,7 @@ void CompareTemplateApp::DoInteractiveUserInput( ) {
     std_cc_filename         = my_input->GetFilenameFromUser("Output std image cc", "Output std image cc", "std_cc.mrc", false);
     data_directory_name     = my_input->GetFilenameFromUser("Name for data directory", "path to data directory", "60_120_5_2.5", false);
     number_of_sampled_views = my_input->GetIntFromUser("Number of sampled views", "number of sampled views", "1", 1, 400);
+    result_number           = my_input->GetIntFromUser("Result number", "result number", "1", 1, 400);
 
     int first_search_position             = -1;
     int last_search_position_sampled_view = -1;
@@ -85,7 +87,7 @@ void CompareTemplateApp::DoInteractiveUserInput( ) {
 
     delete my_input;
 
-    my_current_job.ManualSetArguments("ttttfffffffffifftfiiffitbittttttttti",
+    my_current_job.ManualSetArguments("ttttfffffffffifftfiiffitbitttttttttii",
                                       input_search_images.ToUTF8( ).data( ),
                                       input_reconstruction_particle_filename.ToUTF8( ).data( ),
                                       input_reconstruction_correct_filename.ToUTF8( ).data( ),
@@ -121,7 +123,8 @@ void CompareTemplateApp::DoInteractiveUserInput( ) {
                                       std_ac_filename.ToUTF8( ).data( ),
                                       std_cc_filename.ToUTF8( ).data( ),
                                       data_directory_name.ToUTF8( ).data( ),
-                                      number_of_sampled_views);
+                                      number_of_sampled_views,
+                                      result_number);
 }
 
 // override the do calculation method which will be what is actually run..
@@ -164,6 +167,7 @@ bool CompareTemplateApp::DoCalculation( ) {
     wxString std_cc_filename                   = my_current_job.arguments[33].ReturnStringArgument( );
     wxString data_directory_name               = my_current_job.arguments[34].ReturnStringArgument( );
     int      number_of_sampled_views           = my_current_job.arguments[35].ReturnIntegerArgument( );
+    int      result_number                     = my_current_job.arguments[36].ReturnIntegerArgument( );
 
     // This condition applies to GUI and CLI - it is just a recommendation to the user.
     if ( use_gpu && max_threads <= 1 ) {
@@ -243,18 +247,6 @@ bool CompareTemplateApp::DoCalculation( ) {
     float* theta_tm;
     float* phi_tm;
 
-    //  for ( current_search_position_sampled_view = first_search_position; current_search_position_sampled_view <= last_search_position_sampled_view; current_search_position_sampled_view++ ) {
-    //loop over each rotation angle
-
-    //     for ( current_psi_sampled_view = psi_start; current_psi_sampled_view <= psi_max; current_psi_sampled_view += psi_step_sampled_view ) {
-    //         total_correlation_positions_sampled_view++;
-    //     }
-    // }
-
-    // for ( current_psi_sampled_view = psi_start; current_psi_sampled_view <= psi_max; current_psi_sampled_view += psi_step_sampled_view ) {
-    //     number_of_rotations_sampled_view++;
-    // }
-
     for ( current_search_position_tm = first_search_position; current_search_position_tm <= last_search_position_tm; current_search_position_tm++ ) {
         //loop over each rotation angle
 
@@ -266,11 +258,6 @@ bool CompareTemplateApp::DoCalculation( ) {
     for ( current_psi_tm = psi_start; current_psi_tm <= psi_max; current_psi_tm += psi_step_tm ) {
         number_of_rotations_tm++;
     }
-
-    // wxPrintf("Outside Loop - sampled views in an image:\n");
-    // wxPrintf("Searching %i positions on the Euler sphere (first-last: %i-%i)\n", last_search_position_sampled_view - first_search_position, first_search_position, last_search_position_sampled_view);
-    // wxPrintf("Searching %i rotations per position.\n", number_of_rotations_sampled_view);
-    // wxPrintf("There are %li correlation positions total.\n\n", total_correlation_positions_sampled_view);
 
     wxPrintf("TM step sizes:\n");
     wxPrintf("Searching %i positions on the Euler sphere (first-last: %i-%i)\n", last_search_position_tm - first_search_position, first_search_position, last_search_position_tm);
@@ -290,28 +277,6 @@ bool CompareTemplateApp::DoCalculation( ) {
         theta_tm[k] = global_euler_search_tm.list_of_search_parameters[k][1];
         wxPrintf("theta phi = %f %f\n", phi_tm[k], theta_tm[k]);
     }
-
-    /*
-    //convergence test
-    for ( current_search_position_sampled_view = first_search_position; current_search_position_sampled_view <= last_search_position_sampled_view; current_search_position_sampled_view++ ) {
-        //loop over each rotation angle
-
-        for ( current_psi_sampled_view = psi_start; current_psi_sampled_view <= psi_max; current_psi_sampled_view += psi_step_sampled_view ) {
-            wxPrintf("outer loop : %f %f %f\n", global_euler_search_sampled_view.list_of_search_parameters[current_search_position_sampled_view][0], global_euler_search_sampled_view.list_of_search_parameters[current_search_position_sampled_view][1], current_psi_sampled_view);
-
-            for ( current_search_position_tm = first_search_position; current_search_position_tm <= last_search_position_tm; current_search_position_tm++ ) {
-                //loop over each rotation angle
-
-                for ( current_psi_tm = psi_start; current_psi_tm <= psi_max; current_psi_tm += psi_step_tm ) {
-
-                    if ( current_psi_sampled_view == current_psi_tm && global_euler_search_tm.list_of_search_parameters[current_search_position_tm][0] == global_euler_search_sampled_view.list_of_search_parameters[current_search_position_sampled_view][0] && global_euler_search_tm.list_of_search_parameters[current_search_position_tm][1] == global_euler_search_sampled_view.list_of_search_parameters[current_search_position_sampled_view][1] ) {
-                        wxPrintf("outer in inside\n");
-                    }
-                }
-            }
-        }
-    }
-    */
 
     // These vars are only needed in the GPU code, but also need to be set out here to compile.
     // update GPU setup to "inner" loop only - for tm search
@@ -398,14 +363,14 @@ bool CompareTemplateApp::DoCalculation( ) {
     float ac_val, ac_max, cc_val, cc_max;
 
     // generate particle montage
-    srand(10);
     current_projection_image.Allocate(input_reconstruction_particle_file.ReturnXSize( ), input_reconstruction_particle_file.ReturnXSize( ), 1, false);
     if ( padding != 1.0f )
         padded_projection_image.Allocate(input_reconstruction_particle_file.ReturnXSize( ) * padding, input_reconstruction_particle_file.ReturnXSize( ) * padding, false);
     for ( int K = 0; K < number_of_sampled_views; K++ ) {
         int k1 = rand( ) % number_of_rotations_tm;
         int k2 = rand( ) % (last_search_position_tm - first_search_position + 1);
-        wxPrintf("sampling view @ %f %f %f\n", phi_tm[k2], theta_tm[k2], psi_tm[k1]);
+        wxPrintf("k1 = %i k2 = %i\n", k1, k2);
+        //  wxPrintf("sampling view @ %f %f %f\n", phi_tm[k2], theta_tm[k2], psi_tm[k1]);
 
         angles_sampled_view.Init(phi_tm[k2], theta_tm[k2], psi_tm[k1], 0.0, 0.0);
         // generate particle from sampled view (in TM we applied projection filter first then normalized the templates)
@@ -425,33 +390,7 @@ bool CompareTemplateApp::DoCalculation( ) {
         montage_image_stack.InsertOtherImageAtSpecifiedSlice(&current_projection_image, K);
     }
 
-    /*
-    for ( current_search_position_sampled_view = first_search_position; current_search_position_sampled_view <= last_search_position_sampled_view; current_search_position_sampled_view++ ) {
-        for ( j = 0; j < number_of_rotations_sampled_view; j++ ) {
-            current_psi_sampled_view = psi_start + j * psi_step_sampled_view;
-            view_counter             = current_search_position_sampled_view * number_of_rotations_sampled_view + j;
-            angles_sampled_view.Init(global_euler_search_sampled_view.list_of_search_parameters[current_search_position_sampled_view][0], global_euler_search_sampled_view.list_of_search_parameters[current_search_position_sampled_view][1], current_psi_sampled_view, 0.0, 0.0);
-            // generate particle from sampled view (in TM we applied projection filter first then normalized the templates)
-            if ( padding != 1.0f ) {
-                input_reconstruction_particle.ExtractSlice(padded_projection_image, angles_sampled_view, 1.0f, false);
-                padded_projection_image.SwapRealSpaceQuadrants( );
-                padded_projection_image.BackwardFFT( );
-                padded_projection_image.ClipInto(&current_projection_image);
-                current_projection_image.ForwardFFT( );
-            }
-            else {
-                input_reconstruction_particle.ExtractSlice(current_projection_image, angles_sampled_view, 1.0f, false);
-                current_projection_image.SwapRealSpaceQuadrants( );
-            }
-            current_projection_image.MultiplyPixelWise(projection_filter);
-            current_projection_image.BackwardFFT( );
-            montage_image_stack.InsertOtherImageAtSpecifiedSlice(&current_projection_image, view_counter);
-
-            view_counter++;
-        }
-    }
-    */
-    montage_image_stack.QuickAndDirtyWriteSlices(wxString::Format("%s/montage_stack_%f_%f_%i_.mrc", data_directory_name, psi_step_tm, angular_step_tm, number_of_sampled_views).ToStdString( ), 1, number_of_sampled_views);
+    montage_image_stack.QuickAndDirtyWriteSlices(wxString::Format("%s/montage_stack_%f_%f_%i_%i.mrc", data_directory_name, psi_step_tm, angular_step_tm, number_of_sampled_views, result_number).ToStdString( ), 1, number_of_sampled_views);
     // convert stack to montage
     int montage_dim_x = montage_image_stack.logical_x_dimension * int(sqrt(number_of_sampled_views)); //(last_search_position_sampled_view - first_search_position + 1);
     int montage_dim_y = montage_image_stack.logical_y_dimension * int(sqrt(number_of_sampled_views)); //number_of_rotations_sampled_view;
@@ -492,7 +431,7 @@ bool CompareTemplateApp::DoCalculation( ) {
 
     int       image_counter = 0;
     ImageFile montage_stack_file;
-    montage_stack_file.OpenFile(wxString::Format("%s/montage_stack_%f_%f_%i_.mrc", data_directory_name, psi_step_tm, angular_step_tm, number_of_sampled_views).ToStdString( ), false);
+    montage_stack_file.OpenFile(wxString::Format("%s/montage_stack_%f_%f_%i_%i.mrc", data_directory_name, psi_step_tm, angular_step_tm, number_of_sampled_views, result_number).ToStdString( ), false);
     for ( image_counter_y = 0; image_counter_y < int(sqrt(number_of_sampled_views)); image_counter_y++ ) {
         j_start_output = image_counter_y * montage_image_stack.logical_y_dimension;
 
@@ -537,10 +476,7 @@ bool CompareTemplateApp::DoCalculation( ) {
             }
         }
     }
-    montage_image.QuickAndDirtyWriteSlice(wxString::Format("%s/montage_%f_%f_%i_.mrc", data_directory_name, psi_step_tm, angular_step_tm, number_of_sampled_views).ToStdString( ), 1);
-
-    // montage_image.AddNoise(GAUSSIAN, 0, 0.0001f);
-    // montage_image.QuickAndDirtyWriteSlice(wxString::Format("%s/montage_with_noise_0.0001f.mrc", data_directory_name).ToStdString( ), 1);
+    montage_image.QuickAndDirtyWriteSlice(wxString::Format("%s/montage_%f_%f_%i_%i.mrc", data_directory_name, psi_step_tm, angular_step_tm, number_of_sampled_views, result_number).ToStdString( ), 1);
 
     // normalize stitched image
 
@@ -551,7 +487,7 @@ bool CompareTemplateApp::DoCalculation( ) {
     montage_image.ZeroCentralPixel( ); // equivalent to subtracting mean in real space
 
     montage_image.DivideByConstant(sqrtf(montage_image.ReturnSumOfSquares( )));
-    montage_image.QuickAndDirtyWriteSlice(wxString::Format("%s/montage_scaled_%f_%f_%i_.mrc", data_directory_name, psi_step_tm, angular_step_tm, number_of_sampled_views).ToStdString( ), 1);
+    montage_image.QuickAndDirtyWriteSlice(wxString::Format("%s/montage_scaled_%f_%f_%i_%i.mrc", data_directory_name, psi_step_tm, angular_step_tm, number_of_sampled_views, result_number).ToStdString( ), 1);
 
     // allocate current_projection before gpu code
     // use particle to determine size since template volumes may be padded
@@ -612,22 +548,10 @@ bool CompareTemplateApp::DoCalculation( ) {
 
                 mip_buffer_cc.CopyFrom(&max_intensity_projection_cc);
 
-                // Image psi_buffer;
-                // psi_buffer.CopyFrom(&max_intensity_projection);
-                // Image phi_buffer;
-                // phi_buffer.CopyFrom(&max_intensity_projection);
-                // Image theta_buffer;
-                // theta_buffer.CopyFrom(&max_intensity_projection);
-
                 GPU[tIDX].d_max_intensity_projection_ac.CopyDeviceToHost(mip_buffer_ac, true, false);
 
                 GPU[tIDX].d_max_intensity_projection_cc.CopyDeviceToHost(mip_buffer_cc, true, false);
 
-                // GPU[tIDX].d_best_psi.CopyDeviceToHost(psi_buffer, true, false);
-                // GPU[tIDX].d_best_phi.CopyDeviceToHost(phi_buffer, true, false);
-                // GPU[tIDX].d_best_theta.CopyDeviceToHost(theta_buffer, true, false);
-
-                //                    mip_buffer.QuickAndDirtyWriteSlice("/tmp/tmpMipBuffer.mrc",1,1);
                 // TODO should prob aggregate these across all workers
                 // TODO add a copySum method that allocates a pinned buffer, copies there then sumes into the wanted image.
                 Image sum_ac, sum_cc;
@@ -682,231 +606,6 @@ bool CompareTemplateApp::DoCalculation( ) {
 
 #endif
     }
-    /*
-#pragma omp parallel for num_threads(max_threads) default(shared) private(current_search_position_sampled_view, j, view_counter, angles_sampled_view, current_psi_sampled_view, current_search_position_tm, current_psi_tm, angles_tm, variance, pixel_counter, current_x, current_y, current_projection_other, current_projection_correct_template, current_projection_image, ac_val, ac_max, cc_val, cc_max, padded_projection)
-    for ( current_search_position_sampled_view = first_search_position; current_search_position_sampled_view <= last_search_position_sampled_view; current_search_position_sampled_view++ ) {
-        for ( j = 0; j < number_of_rotations_sampled_view; j++ ) {
-            current_psi_sampled_view = psi_start + j * psi_step_sampled_view;
-            view_counter             = current_search_position_sampled_view * number_of_rotations_sampled_view + j;
-            if ( padding != 1.0f )
-                padded_projection.Allocate(input_reconstruction_correct.logical_x_dimension, input_reconstruction_correct.logical_y_dimension, false);
-            current_projection_image.Allocate(input_reconstruction_particle.logical_x_dimension, input_reconstruction_particle.logical_y_dimension, 1, false);
-            current_projection_other.Allocate(input_reconstruction_particle.logical_x_dimension, input_reconstruction_particle.logical_y_dimension, 1, false); // use particle to determine size since template volumes may be padded
-            current_projection_correct_template.Allocate(input_reconstruction_particle.logical_x_dimension, input_reconstruction_particle.logical_y_dimension, 1, false);
-            //wxPrintf("worker #%i working on view #%i\n", ReturnThreadNumberOfCurrentThread( ), view_counter);
-            angles_sampled_view.Init(global_euler_search_sampled_view.list_of_search_parameters[current_search_position_sampled_view][0], global_euler_search_sampled_view.list_of_search_parameters[current_search_position_sampled_view][1], current_psi_sampled_view, 0.0, 0.0);
-            // generate particle from sampled view
-            input_reconstruction_particle.ExtractSlice(current_projection_image, angles_sampled_view, 1.0f, false);
-            current_projection_image.SwapRealSpaceQuadrants( );
-            current_projection_image.MultiplyPixelWise(projection_filter);
-            current_projection_image.BackwardFFT( );
-            //wxPrintf("view %i before avg = %f std = %f\n", view_counter, current_projection_image.ReturnAverageOfRealValues( ), sqrtf(current_projection_image.ReturnVarianceOfRealValues( )));
-            log_file.WriteCommentLine("view %i before avg = %f std = %f\n", view_counter, current_projection_image.ReturnAverageOfRealValues( ), sqrtf(current_projection_image.ReturnVarianceOfRealValues( )));
-
-            current_projection_image.AddConstant(-img_avg);
-            //current_projection_image.ZeroCentralPixel( );
-            //current_projection_image.DivideByConstant(sqrtf(current_projection_image.ReturnSumOfSquares( )));
-            //current_projection_image.QuickAndDirtyWriteSlice(wxString::Format("view_%i_image.mrc", view_counter).ToStdString( ), 1);
-            current_projection_image.DivideByConstant(img_std);
-            //wxPrintf("view %i after avg = %f std = %f\n", view_counter, current_projection_image.ReturnAverageOfRealValues( ), current_projection_image.ReturnVarianceOfRealValues( ));
-            log_file.WriteCommentLine("view %i after avg = %f std = %f\n", view_counter, current_projection_image.ReturnAverageOfRealValues( ), current_projection_image.ReturnVarianceOfRealValues( ));
-            //if ( view_counter == 0 )
-            //    current_projection_image.QuickAndDirtyWriteSlice(wxString::Format("view_%i_image_after_scaling.mrc", view_counter).ToStdString( ), 1);
-
-            current_projection_image.ForwardFFT( );
-
-            for ( current_search_position_tm = first_search_position; current_search_position_tm <= last_search_position_tm; current_search_position_tm++ ) {
-                for ( current_psi_tm = psi_start; current_psi_tm <= psi_max; current_psi_tm += psi_step_tm ) {
-                    angles_tm.Init(global_euler_search_tm.list_of_search_parameters[current_search_position_tm][0], global_euler_search_tm.list_of_search_parameters[current_search_position_tm][1], current_psi_tm, 0.0, 0.0);
-                    // generate projection from testing template for tm
-                    //input_reconstruction_wrong.ExtractSlice(current_projection_other, angles_tm, 1.0f, false);
-                    //current_projection_other.SwapRealSpaceQuadrants( );
-                    if ( padding != 1.0f ) {
-                        input_reconstruction_wrong.ExtractSlice(padded_projection, angles_tm, 1.0f, false);
-                        padded_projection.SwapRealSpaceQuadrants( );
-                        padded_projection.BackwardFFT( );
-                        padded_projection.ClipInto(&current_projection_other);
-                        current_projection_other.ForwardFFT( );
-                        padded_projection.ForwardFFT( );
-                    }
-                    else {
-                        input_reconstruction_wrong.ExtractSlice(current_projection_other, angles_tm, 1.0f, false);
-                        current_projection_other.SwapRealSpaceQuadrants( );
-                    }
-                    current_projection_other.MultiplyPixelWise(projection_filter);
-                    current_projection_other.BackwardFFT( );
-                    variance = current_projection_other.ReturnSumOfSquares( ) - powf(current_projection_other.ReturnAverageOfRealValues( ), 2);
-                    current_projection_other.DivideByConstant(sqrtf(variance));
-                    //current_projection_2.AddGaussianNoise(10.0f);
-                    current_projection_other.ForwardFFT( );
-                    // Zeroing the central pixel is probably not doing anything useful...
-                    current_projection_other.ZeroCentralPixel( );
-
-                    // generate projection from particle's template for tm
-                    //input_reconstruction_correct.ExtractSlice(current_projection_correct_template, angles_tm, 1.0f, false);
-                    //current_projection_correct_template.SwapRealSpaceQuadrants( );
-                    if ( padding != 1.0f ) {
-                        input_reconstruction_correct.ExtractSlice(padded_projection, angles_tm, 1.0f, false);
-                        padded_projection.SwapRealSpaceQuadrants( );
-                        padded_projection.BackwardFFT( );
-                        padded_projection.ClipInto(&current_projection_correct_template);
-                        current_projection_correct_template.ForwardFFT( );
-                        padded_projection.ForwardFFT( );
-                    }
-                    else {
-                        input_reconstruction_correct.ExtractSlice(current_projection_correct_template, angles_tm, 1.0f, false);
-                        current_projection_correct_template.SwapRealSpaceQuadrants( );
-                    }
-
-                    current_projection_correct_template.MultiplyPixelWise(projection_filter);
-                    current_projection_correct_template.BackwardFFT( );
-                    variance = current_projection_correct_template.ReturnSumOfSquares( ) - powf(current_projection_correct_template.ReturnAverageOfRealValues( ), 2);
-                    current_projection_correct_template.DivideByConstant(sqrtf(variance));
-                    //current_projection_2.AddGaussianNoise(10.0f);
-                    current_projection_correct_template.ForwardFFT( );
-                    // Zeroing the central pixel is probably not doing anything useful...
-                    current_projection_correct_template.ZeroCentralPixel( );
-
-                    //if ( view_counter == 0 ) {
-
-                    //    current_projection_correct_template.QuickAndDirtyWriteSlice(wxString::Format("view_%i_ref1.mrc", view_counter).ToStdString( ), 1);
-                    //    current_projection_other.QuickAndDirtyWriteSlice(wxString::Format("view_%i_ref2.mrc", view_counter).ToStdString( ), 1);
-                    //}
-
-#ifdef MKL
-                    // Use the MKL
-                    vmcMulByConj(current_projection_correct_template.real_memory_allocated / 2, reinterpret_cast<MKL_Complex8*>(current_projection_image.complex_values), reinterpret_cast<MKL_Complex8*>(current_projection_correct_template.complex_values), reinterpret_cast<MKL_Complex8*>(current_projection_correct_template.complex_values), VML_EP | VML_FTZDAZ_ON | VML_ERRMODE_IGNORE);
-#else
-                    for ( pixel_counter = 0; pixel_counter < current_projection_image.real_memory_allocated / 2; pixel_counter++ ) {
-                        current_projection_correct_template.complex_values[pixel_counter] = conj(current_projection_correct_template.complex_values[pixel_counter]) * current_projection_image.complex_values[pixel_counter];
-                    }
-#endif
-
-                    current_projection_correct_template.SwapRealSpaceQuadrants( );
-                    current_projection_correct_template.BackwardFFT( );
-                    ac_val = current_projection_correct_template.ReturnCentralPixelValue( );
-                    ac_max = current_projection_correct_template.ReturnMaximumValue( );
-
-#ifdef MKL
-                    // Use the MKL
-                    vmcMulByConj(current_projection_other.real_memory_allocated / 2, reinterpret_cast<MKL_Complex8*>(current_projection_image.complex_values), reinterpret_cast<MKL_Complex8*>(current_projection_other.complex_values), reinterpret_cast<MKL_Complex8*>(current_projection_other.complex_values), VML_EP | VML_FTZDAZ_ON | VML_ERRMODE_IGNORE);
-#else
-                    for ( pixel_counter = 0; pixel_counter < current_projection_1.real_memory_allocated / 2; pixel_counter++ ) {
-                        current_projection_other.complex_values[pixel_counter] = conj(current_projection_other.complex_values[pixel_counter]) * current_projection_image.complex_values[pixel_counter];
-                    }
-#endif
-                    current_projection_other.SwapRealSpaceQuadrants( );
-                    current_projection_other.BackwardFFT( );
-                    cc_val = current_projection_other.ReturnCentralPixelValue( );
-                    cc_max = current_projection_other.ReturnMaximumValue( );
-
-                    // find alignment using ac
-                    if ( current_psi_sampled_view == current_psi_tm && global_euler_search_sampled_view.list_of_search_parameters[current_search_position_sampled_view][0] == global_euler_search_tm.list_of_search_parameters[current_search_position_tm][0] && global_euler_search_sampled_view.list_of_search_parameters[current_search_position_sampled_view][1] == global_euler_search_tm.list_of_search_parameters[current_search_position_tm][1] ) {
-
-                        log_file.WriteCommentLine("central ac / max ac = %f %f \n", ac_val, ac_max);
-                        log_file.WriteCommentLine("central cc / max cc = %f %f \n", cc_val, cc_max);
-
-                        //    continue;
-                    }
-
-                    // loop through the whole image to update each pixel on mip
-                    pixel_counter = 0;
-                    for ( current_y = 0; current_y < max_intensity_projection_cc.logical_y_dimension; current_y++ ) {
-                        for ( current_x = 0; current_x < max_intensity_projection_cc.logical_x_dimension; current_x++ ) {
-                            // update mip cc
-
-                            if ( current_projection_other.real_values[pixel_counter] > max_intensity_projection_cc.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter) ) {
-                                max_intensity_projection_cc.ReplaceRealPixelAtPhysicalCoord(current_projection_other.real_values[pixel_counter], current_x, current_y, view_counter);
-                            }
-
-                            // update mip ac
-                            if ( current_projection_correct_template.real_values[pixel_counter] > max_intensity_projection_ac.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter) ) {
-                                max_intensity_projection_ac.ReplaceRealPixelAtPhysicalCoord(current_projection_correct_template.real_values[pixel_counter], current_x, current_y, view_counter);
-                            }
-                            correlation_pixel_sum_ac.real_values[correlation_pixel_sum_ac.ReturnReal1DAddressFromPhysicalCoord(current_x, current_y, view_counter)] += current_projection_correct_template.real_values[pixel_counter];
-                            correlation_pixel_sum_cc.real_values[correlation_pixel_sum_cc.ReturnReal1DAddressFromPhysicalCoord(current_x, current_y, view_counter)] += current_projection_other.real_values[pixel_counter];
-                            correlation_pixel_sum_of_squares_ac.real_values[correlation_pixel_sum_of_squares_ac.ReturnReal1DAddressFromPhysicalCoord(current_x, current_y, view_counter)] += pow(current_projection_correct_template.real_values[pixel_counter], 2);
-                            correlation_pixel_sum_of_squares_cc.real_values[correlation_pixel_sum_of_squares_cc.ReturnReal1DAddressFromPhysicalCoord(current_x, current_y, view_counter)] += pow(current_projection_other.real_values[pixel_counter], 2);
-
-                            pixel_counter++;
-                        }
-                        pixel_counter += current_projection_other.padding_jump_value;
-                    }
-                }
-            }
-        }
-    }
-
-    double sqrt_input_pixels = sqrt((double)(input_reconstruction_particle.logical_x_dimension * input_reconstruction_particle.logical_y_dimension));
-    wxPrintf("N = %f\n", float(sqrt_input_pixels));
-    max_intensity_projection_ac.MultiplyByConstant((float)sqrt_input_pixels);
-    max_intensity_projection_cc.MultiplyByConstant((float)sqrt_input_pixels);
-
-    max_intensity_projection_cc.QuickAndDirtyWriteSlices("mip_cc.mrc", 1, total_correlation_positions_sampled_view);
-    max_intensity_projection_ac.QuickAndDirtyWriteSlices("mip_ac.mrc", 1, total_correlation_positions_sampled_view);
-
-    correlation_pixel_sum_of_squares_ac.QuickAndDirtyWriteSlices("sos_ac.mrc", 1, total_correlation_positions_sampled_view);
-    correlation_pixel_sum_of_squares_cc.QuickAndDirtyWriteSlices("sos_cc.mrc", 1, total_correlation_positions_sampled_view);
-
-    pixel_counter = 0;
-    for ( int current_y = 0; current_y < correlation_pixel_sum_ac.logical_y_dimension; current_y++ ) {
-        for ( int current_x = 0; current_x < correlation_pixel_sum_ac.logical_x_dimension; current_x++ ) {
-            for ( view_counter = 0; view_counter < total_correlation_positions_sampled_view; view_counter++ ) {
-                correlation_pixel_sum_ac.real_values[correlation_pixel_sum_ac.ReturnReal1DAddressFromPhysicalCoord(current_x, current_y, view_counter)] /= float(total_correlation_positions_tm);
-
-                correlation_pixel_sum_cc.real_values[correlation_pixel_sum_cc.ReturnReal1DAddressFromPhysicalCoord(current_x, current_y, view_counter)] /= float(total_correlation_positions_tm);
-
-                correlation_pixel_sum_of_squares_ac.real_values[correlation_pixel_sum_of_squares_ac.ReturnReal1DAddressFromPhysicalCoord(current_x, current_y, view_counter)] = correlation_pixel_sum_of_squares_ac.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter) / float(total_correlation_positions_tm) - powf(correlation_pixel_sum_ac.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter), 2);
-
-                correlation_pixel_sum_of_squares_cc.real_values[correlation_pixel_sum_of_squares_cc.ReturnReal1DAddressFromPhysicalCoord(current_x, current_y, view_counter)] = correlation_pixel_sum_of_squares_cc.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter) / float(total_correlation_positions_tm) - powf(correlation_pixel_sum_cc.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter), 2);
-
-                if ( correlation_pixel_sum_of_squares_ac.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter) > 0.0f ) {
-                    correlation_pixel_sum_of_squares_ac.real_values[correlation_pixel_sum_of_squares_ac.ReturnReal1DAddressFromPhysicalCoord(current_x, current_y, view_counter)] = sqrtf(correlation_pixel_sum_of_squares_ac.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter)) * (float)sqrt_input_pixels;
-                }
-                else
-                    correlation_pixel_sum_of_squares_ac.ReplaceRealPixelAtPhysicalCoord(0.0f, current_x, current_y, view_counter);
-
-                correlation_pixel_sum_ac.real_values[correlation_pixel_sum_ac.ReturnReal1DAddressFromPhysicalCoord(current_x, current_y, view_counter)] *= (float)sqrt_input_pixels;
-
-                if ( correlation_pixel_sum_of_squares_cc.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter) > 0.0f ) {
-                    correlation_pixel_sum_of_squares_cc.real_values[correlation_pixel_sum_of_squares_cc.ReturnReal1DAddressFromPhysicalCoord(current_x, current_y, view_counter)] = sqrtf(correlation_pixel_sum_of_squares_cc.ReturnRealPixelFromPhysicalCoord(current_x, current_y, view_counter)) * (float)sqrt_input_pixels;
-                }
-                else
-                    correlation_pixel_sum_of_squares_cc.ReplaceRealPixelAtPhysicalCoord(0.0f, current_x, current_y, view_counter);
-
-                correlation_pixel_sum_cc.real_values[correlation_pixel_sum_cc.ReturnReal1DAddressFromPhysicalCoord(current_x, current_y, view_counter)] *= (float)sqrt_input_pixels;
-            }
-            pixel_counter++;
-        }
-        pixel_counter += current_projection_other.padding_jump_value;
-    }
-    correlation_pixel_sum_ac.QuickAndDirtyWriteSlices("avg_ac.mrc", 1, total_correlation_positions_sampled_view);
-    correlation_pixel_sum_cc.QuickAndDirtyWriteSlices("avg_cc.mrc", 1, total_correlation_positions_sampled_view);
-
-    correlation_pixel_sum_of_squares_ac.QuickAndDirtyWriteSlices("std_ac.mrc", 1, total_correlation_positions_sampled_view);
-    correlation_pixel_sum_of_squares_cc.QuickAndDirtyWriteSlices("std_cc.mrc", 1, total_correlation_positions_sampled_view);
-    // scaling
-
-    for ( pixel_counter = 0; pixel_counter < max_intensity_projection_ac.real_memory_allocated; pixel_counter++ ) {
-        max_intensity_projection_ac.real_values[pixel_counter] -= correlation_pixel_sum_ac.real_values[pixel_counter];
-        max_intensity_projection_cc.real_values[pixel_counter] -= correlation_pixel_sum_cc.real_values[pixel_counter];
-
-        if ( correlation_pixel_sum_of_squares_ac.real_values[pixel_counter] > 0.0f ) {
-            max_intensity_projection_ac.real_values[pixel_counter] /= correlation_pixel_sum_of_squares_ac.real_values[pixel_counter];
-        }
-        else
-            max_intensity_projection_ac.real_values[pixel_counter] = 0.0f;
-
-        if ( correlation_pixel_sum_of_squares_cc.real_values[pixel_counter] > 0.0f ) {
-            max_intensity_projection_cc.real_values[pixel_counter] /= correlation_pixel_sum_of_squares_cc.real_values[pixel_counter];
-        }
-        else
-            max_intensity_projection_cc.real_values[pixel_counter] = 0.0f;
-    }
-
-    max_intensity_projection_ac.QuickAndDirtyWriteSlices("scaled_mip_ac.mrc", 1, total_correlation_positions_sampled_view);
-    max_intensity_projection_cc.QuickAndDirtyWriteSlices("scaled_mip_cc.mrc", 1, total_correlation_positions_sampled_view);
-    */
 
     // post processing and saving outputs
     double sqrt_input_pixels = sqrt((double)(input_reconstruction_particle.logical_x_dimension * input_reconstruction_particle.logical_y_dimension));
@@ -916,11 +615,6 @@ bool CompareTemplateApp::DoCalculation( ) {
     max_intensity_projection_ac.QuickAndDirtyWriteSlice(mip_ac_filename.ToStdString( ), 1);
     max_intensity_projection_cc.QuickAndDirtyWriteSlice(mip_cc_filename.ToStdString( ), 1);
 
-    //  correlation_pixel_sum_of_squares_ac.QuickAndDirtyWriteSlices("check_gpu_run/sos_ac.mrc", 1, total_correlation_positions_sampled_view);
-    //  correlation_pixel_sum_of_squares_cc.QuickAndDirtyWriteSlices("check_gpu_run/sos_cc.mrc", 1, total_correlation_positions_sampled_view);
-
-    //  correlation_pixel_sum_ac.QuickAndDirtyWriteSlices("check_gpu_run/sum_ac.mrc", 1, total_correlation_positions_sampled_view);
-    //  correlation_pixel_sum_cc.QuickAndDirtyWriteSlices("check_gpu_run/sum_cc.mrc", 1, total_correlation_positions_sampled_view);
     for ( pixel_counter = 0; pixel_counter < montage_image.real_memory_allocated; pixel_counter++ ) {
         correlation_pixel_sum_ac_image.real_values[pixel_counter]            = (float)correlation_pixel_sum_ac[pixel_counter];
         correlation_pixel_sum_of_squares_ac_image.real_values[pixel_counter] = (float)correlation_pixel_sum_of_squares_ac[pixel_counter];
