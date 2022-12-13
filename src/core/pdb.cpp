@@ -398,21 +398,32 @@ void PDB::Init( ) {
                             case 25:
                                 my_atoms.Item(current_atom_number).atom_type = manganese;
                                 break;
-                            case 27:
+                            case 26:
                                 my_atoms.Item(current_atom_number).atom_type = iron;
                                 break;
-                            case 28:
+                            case 27:
                                 my_atoms.Item(current_atom_number).atom_type = cobalt;
                                 break;
+                            case 29:
+                                if ( atom.charge == 1 ) {
+                                    my_atoms.Item(current_atom_number).atom_type = copper1;
+                                    break;
+                                }
                             case 30:
                                 my_atoms.Item(current_atom_number).atom_type = zinc;
                                 break;
                             case 34:
                                 my_atoms.Item(current_atom_number).atom_type = selenium;
                                 break;
+                            case 47:
+                                if ( atom.charge == 1 ) {
+                                    my_atoms.Item(current_atom_number).atom_type = silver1;
+                                    break;
+                                }
                             case 79:
                                 my_atoms.Item(current_atom_number).atom_type = gold;
                                 break;
+
                             default:
                                 wxPrintf("Un-coded conversion from gemmi::el to Atom::atom_type\n");
                                 cout << "Element is " << atom.element.name( ) << "and el" << atom.element.ordinal( ) << '\n';
