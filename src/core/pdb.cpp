@@ -289,7 +289,7 @@ void PDB::Init( ) {
                     // wxPrintf("Residue Name, Segment, Entity type, %s %s\n",res.name,res.segment)
                     for ( gemmi::Atom& atom : res.atoms ) {
                         // For now, we only want ATOM
-                        if ( res.het_flag == 'A' ) {
+                        if ( res.het_flag == 'A' || (res.het_flag == 'H' && res.is_water( ) == false) ) {
                             number_of_atoms++;
                         }
                     }
@@ -327,7 +327,7 @@ void PDB::Init( ) {
         for ( gemmi::Chain& chain : model.chains ) {
             for ( gemmi::Residue& res : chain.residues ) {
                 // For now, we only want ATOM
-                if ( res.het_flag == 'A' ) { // 'A' = ATOM, 'H' = HETATM, 0 = unspecified
+                if ( res.het_flag == 'A' || (res.het_flag == 'H' && res.is_water( ) == false) ) { // 'A' = ATOM, 'H' = HETATM, 0 = unspecified
                     for ( gemmi::Atom& atom : res.atoms ) {
 
                         my_atoms.Item(current_atom_number).name             = wxString(atom.name);
