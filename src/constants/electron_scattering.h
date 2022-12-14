@@ -5,7 +5,7 @@ namespace cistem {
 
 // To account for the bond phase error in practice, a small scaling factor is applied to the atomic potentials
 constexpr float bond_scaling         = 1.043; //1.0475;
-constexpr int   number_of_atom_types = 24;
+constexpr int   number_of_atom_types = 25;
 // The name is to an index matching here in the PDB class. If you change this, you MUST change that. This is probably a bad idea.
 // H(0),C(1),N(2),O(3),F(4),Na(5),Mg(6),P(7),S(8),Cl(9),K(10),Ca(11),Mn(12),Fe(13),Zn(14),H20(15),0-(16)
 constexpr float ATOMIC_NUMBER[number_of_atom_types] = {
@@ -33,6 +33,7 @@ constexpr float ATOMIC_NUMBER[number_of_atom_types] = {
         7.35f,
         29.0f,
         47.0f,
+        79.0f, // 24
 };
 
 constexpr float WN = 0.8045 * 0.79; // sum netOxy A / sum water (A) = 0.8045 and ratio of total elastic cross section water/oxygen 0.67-0.92 Using average 0.79 (there is no fixed estimate)
@@ -61,8 +62,9 @@ constexpr float SCATTERING_PARAMETERS_A[number_of_atom_types][5] = {
         {0.0, 0.0, 0.0, 0.0, 0.0}, // 19
         {0.0, 0.0, 0.0, 0.0, 0.0}, // 20
         {0.0, 0.0, 0.0, 0.0, 0.0}, // 21
-        {0.312, 0.812, 1.11, 0.794, 0.257}, //22
-        {0.503, 0.940, 2.17, 1.99, 0.726}, //23
+        {0.312, 0.812, 1.11, 0.794, 0.257}, //22 Cupper 1+
+        {0.503, 0.940, 2.17, 1.99, 0.726}, //23 Silver 1+
+        {0.811, 1.57, 2.63, 2.68, 0.998}, // 24 Gold 1+
 };
 
 // 12.5664 ~ (4*pi)
@@ -85,13 +87,14 @@ constexpr float SCATTERING_PARAMETERS_B[number_of_atom_types][5] = {
         {0.2593, 1.7998, 6.7500, 25.5860, 73.5284},
         {WN * 4.718, WN * 16.75, WN * 0.4524, WN * 13.43, WN * 4.4480},
         {0.397, 2.6400, 8.8000, 27.1, 91.8}, //Peng 98
-        {0.0, 0.0, 0.0, 0.0, 0.0}, // 17
+        {0.0f, 0.0f, 0.0f, 0.0f, 0.0f}, // 17
         {0.0, 0.0, 0.0, 0.0, 0.0}, // 18
         {0.0, 0.0, 0.0, 0.0, 0.0}, // 19
         {0.0, 0.0, 0.0, 0.0, 0.0}, // 20
         {0.0, 0.0, 0.0, 0.0, 0.0}, // 21
-        {0.201, 131, 3.80, 10.5, 28.2}, //22
-        {0.199, 1.19, 4.05, 11.3, 32.4}, //23
+        {0.201, 1.31, 3.80, 10.5, 28.2}, //22 Cupper 1+
+        {0.199, 1.19, 4.05, 11.3, 32.4}, //23 Silver 1+
+        {0.201, 1.18, 4.25, 12.1, 34.4}, // 24 Gold 1+
 
 };
 

@@ -2849,7 +2849,13 @@ void SimulateApp::calc_scattering_potential(const PDB*     current_specimen,
             continue;
 
         element_inelastic_ratio = sqrtf(non_water_inelastic_scaling / sp.ReturnAtomicNumber(atom_id)); // Reimer/Ross_Messemer 1989
-        bFactor                 = return_bfactor(current_specimen->my_atoms.Item(current_atom).bfactor);
+        if ( sp.ReturnAtomicNumber(atom_id) > 28.0 ) {
+            wxPrintf("WARNING: Atomic number %i, %f encountered.\n", atom_id, sp.ReturnAtomicNumber(atom_id));
+            // Print Scattering Parameters
+            wxPrintf("ScatteringA: %f %f %f %f %f\n", sp.ReturnScatteringParamtersA(atom_id, 0), sp.ReturnScatteringParamtersA(atom_id, 1), sp.ReturnScatteringParamtersA(atom_id, 2), sp.ReturnScatteringParamtersA(atom_id, 3), sp.ReturnScatteringParamtersA(atom_id, 4));
+            wxPrintf("ScatteringB: %f %f %f %f %f\n", sp.ReturnScatteringParamtersB(atom_id, 0), sp.ReturnScatteringParamtersB(atom_id, 1), sp.ReturnScatteringParamtersB(atom_id, 2), sp.ReturnScatteringParamtersB(atom_id, 3), sp.ReturnScatteringParamtersB(atom_id, 4));
+        }
+        bFactor = return_bfactor(current_specimen->my_atoms.Item(current_atom).bfactor);
 
         corners R;
         //        Coords coords;

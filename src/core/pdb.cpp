@@ -405,10 +405,8 @@ void PDB::Init( ) {
                                 my_atoms.Item(current_atom_number).atom_type = cobalt;
                                 break;
                             case 29:
-                                if ( atom.charge == 1 ) {
-                                    my_atoms.Item(current_atom_number).atom_type = copper1;
-                                    break;
-                                }
+                                my_atoms.Item(current_atom_number).atom_type = copper1;
+                                break;
                             case 30:
                                 my_atoms.Item(current_atom_number).atom_type = zinc;
                                 break;
@@ -416,12 +414,10 @@ void PDB::Init( ) {
                                 my_atoms.Item(current_atom_number).atom_type = selenium;
                                 break;
                             case 47:
-                                if ( atom.charge == 1 ) {
-                                    my_atoms.Item(current_atom_number).atom_type = silver1;
-                                    break;
-                                }
+                                my_atoms.Item(current_atom_number).atom_type = silver1;
+                                break;
                             case 79:
-                                my_atoms.Item(current_atom_number).atom_type = gold;
+                                my_atoms.Item(current_atom_number).atom_type = gold1;
                                 break;
 
                             default:
