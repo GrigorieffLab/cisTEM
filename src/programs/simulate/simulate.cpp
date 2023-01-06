@@ -2132,11 +2132,19 @@ void SimulateApp::probability_density_2d(PDB* pdb_ensemble, int time_step) {
                         for ( long pixel_counter = 0; pixel_counter < distance_slab.real_memory_allocated; pixel_counter++ ) {
                             float current_weight = distance_slab.real_values[pixel_counter];
                             if ( current_weight > DISTANCE_INIT ) { // should it be >?
-                                water_mask_slab.real_values[pixel_counter] = 1.0f;
+                                if ( water_shell_only ) {
+                                    water_mask_slab.real_values[pixel_counter] = 0.0f;
+                                }
+                                else
+                                    water_mask_slab.real_values[pixel_counter] = 1.0f;
                             }
                             else {
-                                current_weight                             = sqrtf(current_weight);
-                                water_mask_slab.real_values[pixel_counter] = return_hydration_weight(current_weight);
+                                current_weight = sqrtf(current_weight);
+                                if ( water_shell_only && current_weight > 4.0f ) {
+                                    water_mask_slab.real_values[pixel_counter] = return_hydration_weight_tapered(4.0, current_weight);
+                                }
+                                else
+                                    water_mask_slab.real_values[pixel_counter] = return_hydration_weight(current_weight);
                             }
                         }
                     }
@@ -3272,10 +3280,6 @@ void SimulateApp::fill_water_potential(const PDB* current_specimen, Image* scatt
         tmpPrj[0].SetToConstant(0.0f);
         this->project(water_mask_slab, tmpPrj, 0);
         tmpPrj->DivideByConstant((float)water_mask_slab->logical_z_dimension);
-        if ( iSlab == 25 ) {
-            water_mask_slab->QuickAndDirtyWriteSlices(wxString::Format("water_mask_slab_%i.mrc", iSlab).ToStdString( ), 1, water_mask_slab->logical_z_dimension);
-            tmpPrj[0].QuickAndDirtyWriteSlice("weighting_of_water_slab25.mrc", 1, true);
-        }
         float mean_water_value = projected_water_atoms.ReturnAverageOfRealValues(-0.0001, false); // / water_mask.logical_z_dimension;
         // each value in projected_water_atoms x,y means the summed projected water potential from all waters
         projected_water_atoms.CopyFrom(tmpPrj);
