@@ -89,9 +89,12 @@ void TemplateSnrRatioCore::Init(MyApp*           parent_pointer,
     d_max_intensity_projection_ac.Allocate(d_montage_image.dims.x, d_montage_image.dims.y, d_montage_image.dims.z, true);
     d_max_intensity_projection_cc.Allocate(d_montage_image.dims.x, d_montage_image.dims.y, d_montage_image.dims.z, true);
 
-    // d_best_psi.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
-    // d_best_theta.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
-    // d_best_phi.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
+    d_best_psi_ac.Allocate(d_montage_image.dims.x, d_montage_image.dims.y, d_montage_image.dims.z, true);
+    d_best_theta_ac.Allocate(d_montage_image.dims.x, d_montage_image.dims.y, d_montage_image.dims.z, true);
+    d_best_phi_ac.Allocate(d_montage_image.dims.x, d_montage_image.dims.y, d_montage_image.dims.z, true);
+    d_best_psi_cc.Allocate(d_montage_image.dims.x, d_montage_image.dims.y, d_montage_image.dims.z, true);
+    d_best_theta_cc.Allocate(d_montage_image.dims.x, d_montage_image.dims.y, d_montage_image.dims.z, true);
+    d_best_phi_cc.Allocate(d_montage_image.dims.x, d_montage_image.dims.y, d_montage_image.dims.z, true);
 
     // single-view images
     d_sum1_ac.Allocate(d_montage_image.dims.x, d_montage_image.dims.y, d_montage_image.dims.z, true);
@@ -143,6 +146,13 @@ void TemplateSnrRatioCore::RunInnerLoop(Image& projection_filter, int threadIDX,
 
     d_max_intensity_projection_ac.Zeros( );
     d_max_intensity_projection_cc.Zeros( );
+
+    d_best_psi_ac.Zeros( );
+    d_best_phi_ac.Zeros( );
+    d_best_theta_ac.Zeros( );
+    d_best_psi_cc.Zeros( );
+    d_best_phi_cc.Zeros( );
+    d_best_theta_cc.Zeros( );
 
     d_padded_reference_correct.Zeros( );
     d_padded_reference_wrong.Zeros( );
@@ -621,7 +631,7 @@ __global__ void UpdateMipPixelWiseKernel(__half* correlation_output, __half2* my
     //
 }
 
-__global__ void WriteMipToImageKernel(const __half2*, const __half2* my_new_peaks, const int, cufftReal*);
+__global__ void WriteMipToImageKernel(const __half2*, const __half2* my_new_peaks, const int, cufftReal*, cufftReal*, cufftReal*, cufftReal*);
 
 void TemplateSnrRatioCore::MipToImage( ) {
 
@@ -630,19 +640,22 @@ void TemplateSnrRatioCore::MipToImage( ) {
     dim3         gridDims        = dim3((d_max_intensity_projection_ac.real_memory_allocated + threadsPerBlock.x - 1) / threadsPerBlock.x, 1, 1);
 
     WriteMipToImageKernel<<<gridDims, threadsPerBlock, 0, cudaStreamPerThread>>>(my_peaks_ac, my_new_peaks_ac, d_max_intensity_projection_ac.real_memory_allocated,
-                                                                                 d_max_intensity_projection_ac.real_values_gpu);
+                                                                                 d_max_intensity_projection_ac.real_values_gpu, d_best_psi_ac.real_values_gpu, d_best_theta_ac.real_values_gpu, d_best_phi_ac.real_values_gpu);
     WriteMipToImageKernel<<<gridDims, threadsPerBlock, 0, cudaStreamPerThread>>>(my_peaks_cc, my_new_peaks_cc, d_max_intensity_projection_cc.real_memory_allocated,
-                                                                                 d_max_intensity_projection_cc.real_values_gpu);
+                                                                                 d_max_intensity_projection_cc.real_values_gpu, d_best_psi_cc.real_values_gpu, d_best_theta_cc.real_values_gpu, d_best_phi_cc.real_values_gpu);
     postcheck
 }
 
-__global__ void WriteMipToImageKernel(const __half2* my_peaks, const __half2* my_new_peaks, const int numel, cufftReal* mip) {
+__global__ void WriteMipToImageKernel(const __half2* my_peaks, const __half2* my_new_peaks, const int numel, cufftReal* mip, cufftReal* psi, cufftReal* theta, cufftReal* phi) {
 
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
 
     if ( x < numel ) {
 
-        mip[x] = (cufftReal)__low2float(my_peaks[x]);
+        mip[x]   = (cufftReal)__low2float(my_peaks[x]);
+        psi[x]   = (cufftReal)__high2float(my_peaks[x]);
+        theta[x] = (cufftReal)__low2float(my_new_peaks[x]);
+        phi[x]   = (cufftReal)__high2float(my_new_peaks[x]);
     }
 }
 

@@ -29,9 +29,9 @@ class TemplateSnrRatioCore {
 
     // These are assumed to be empty containers at the outset, so xfer host-->device is skipped
     GpuImage d_max_intensity_projection_ac, d_max_intensity_projection_cc;
-    GpuImage d_best_psi;
-    GpuImage d_best_phi;
-    GpuImage d_best_theta;
+    GpuImage d_best_psi_ac, d_best_psi_cc;
+    GpuImage d_best_phi_ac, d_best_phi_cc;
+    GpuImage d_best_theta_ac, d_best_theta_cc;
     GpuImage d_best_defocus;
     GpuImage d_best_pixel_size;
 
