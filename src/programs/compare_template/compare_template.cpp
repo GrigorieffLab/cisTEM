@@ -18,7 +18,7 @@ IMPLEMENT_APP(CompareTemplateApp)
 void CompareTemplateApp::DoInteractiveUserInput( ) {
     wxString input_search_images;
     wxString input_reconstruction_particle_filename, input_reconstruction_correct_filename, input_reconstruction_wrong_filename;
-    wxString log_output_file;
+    // wxString log_output_file;
     wxString scaled_mip_ac_filename, scaled_mip_cc_filename, mip_ac_filename, mip_cc_filename, avg_ac_filename, avg_cc_filename, std_ac_filename, std_cc_filename, data_directory_name;
     wxString output_pose_filename;
     wxString best_psi_ac_filename;
@@ -72,7 +72,7 @@ void CompareTemplateApp::DoInteractiveUserInput( ) {
     my_symmetry                            = my_input->GetSymmetryFromUser("Template symmetry", "The symmetry of the template reconstruction", "C1");
     angular_step_tm                        = my_input->GetFloatFromUser("TM out of plane angular step (0.0 = set automatically)", "Angular step size for global grid search", "0.0", 0.0);
     in_plane_angular_step_tm               = my_input->GetFloatFromUser("TM in plane angular step (0.0 = set automatically)", "Angular step size for in-plane rotations during the search", "0.0", 0.0);
-    log_output_file                        = my_input->GetFilenameFromUser("Log file for recording meta data", "Log output file", "log.txt", false);
+    //log_output_file                        = my_input->GetFilenameFromUser("Log file for recording meta data", "Log output file", "log.txt", false);
 #ifdef ENABLEGPU
     use_gpu_input = my_input->GetYesNoFromUser("Use GPU", "Offload expensive calcs to GPU", "No");
     max_threads   = my_input->GetIntFromUser("Max. threads to use for calculation", "when threading, what is the max threads to run", "1", 1);
@@ -101,7 +101,7 @@ void CompareTemplateApp::DoInteractiveUserInput( ) {
 
     delete my_input;
 
-    my_current_job.ManualSetArguments("tttttfffffffffifftfiiffitbitttttttttttttttii",
+    my_current_job.ManualSetArguments("tttttfffffffffifftfiiffibitttttttttttttttii",
                                       input_search_images.ToUTF8( ).data( ),
                                       input_reconstruction_particle_filename.ToUTF8( ).data( ),
                                       input_reconstruction_correct_filename.ToUTF8( ).data( ),
@@ -126,7 +126,7 @@ void CompareTemplateApp::DoInteractiveUserInput( ) {
                                       angular_step_tm,
                                       in_plane_angular_step_tm,
                                       last_search_position_tm,
-                                      log_output_file.ToUTF8( ).data( ),
+                                      // log_output_file.ToUTF8( ).data( ),
                                       use_gpu_input,
                                       max_threads,
                                       scaled_mip_ac_filename.ToUTF8( ).data( ),
@@ -163,39 +163,38 @@ bool CompareTemplateApp::DoCalculation( ) {
     float    defocus1                               = my_current_job.arguments[9].ReturnFloatArgument( );
     float    defocus2                               = my_current_job.arguments[10].ReturnFloatArgument( );
     float    defocus_angle                          = my_current_job.arguments[11].ReturnFloatArgument( );
-    ;
-    float    high_resolution_limit_search      = my_current_job.arguments[12].ReturnFloatArgument( );
-    float    angular_step_sampling             = my_current_job.arguments[13].ReturnFloatArgument( );
-    int      best_parameters_to_keep           = my_current_job.arguments[14].ReturnIntegerArgument( );
-    float    padding                           = my_current_job.arguments[15].ReturnFloatArgument( );
-    float    phase_shift                       = my_current_job.arguments[16].ReturnFloatArgument( );
-    wxString my_symmetry                       = my_current_job.arguments[17].ReturnStringArgument( );
-    float    in_plane_angular_step_sampling    = my_current_job.arguments[18].ReturnFloatArgument( );
-    int      first_search_position             = my_current_job.arguments[19].ReturnIntegerArgument( );
-    int      last_search_position_sampled_view = my_current_job.arguments[20].ReturnIntegerArgument( );
-    float    angular_step_tm                   = my_current_job.arguments[21].ReturnFloatArgument( );
-    float    in_plane_angular_step_tm          = my_current_job.arguments[22].ReturnFloatArgument( );
-    int      last_search_position_tm           = my_current_job.arguments[23].ReturnIntegerArgument( );
-    wxString log_output_file                   = my_current_job.arguments[24].ReturnStringArgument( );
-    bool     use_gpu                           = my_current_job.arguments[25].ReturnBoolArgument( );
-    int      max_threads                       = my_current_job.arguments[26].ReturnIntegerArgument( );
-    wxString scaled_mip_ac_filename            = my_current_job.arguments[27].ReturnStringArgument( );
-    wxString scaled_mip_cc_filename            = my_current_job.arguments[28].ReturnStringArgument( );
-    wxString mip_ac_filename                   = my_current_job.arguments[29].ReturnStringArgument( );
-    wxString mip_cc_filename                   = my_current_job.arguments[30].ReturnStringArgument( );
-    wxString avg_ac_filename                   = my_current_job.arguments[31].ReturnStringArgument( );
-    wxString avg_cc_filename                   = my_current_job.arguments[32].ReturnStringArgument( );
-    wxString std_ac_filename                   = my_current_job.arguments[33].ReturnStringArgument( );
-    wxString std_cc_filename                   = my_current_job.arguments[34].ReturnStringArgument( );
-    wxString best_psi_ac_filename              = my_current_job.arguments[35].ReturnStringArgument( );
-    wxString best_theta_ac_filename            = my_current_job.arguments[36].ReturnStringArgument( );
-    wxString best_phi_ac_filename              = my_current_job.arguments[37].ReturnStringArgument( );
-    wxString best_psi_cc_filename              = my_current_job.arguments[38].ReturnStringArgument( );
-    wxString best_theta_cc_filename            = my_current_job.arguments[39].ReturnStringArgument( );
-    wxString best_phi_cc_filename              = my_current_job.arguments[40].ReturnStringArgument( );
-    wxString data_directory_name               = my_current_job.arguments[41].ReturnStringArgument( );
-    int      number_of_sampled_views           = my_current_job.arguments[42].ReturnIntegerArgument( );
-    int      result_number                     = my_current_job.arguments[43].ReturnIntegerArgument( );
+    float    high_resolution_limit_search           = my_current_job.arguments[12].ReturnFloatArgument( );
+    float    angular_step_sampling                  = my_current_job.arguments[13].ReturnFloatArgument( );
+    int      best_parameters_to_keep                = my_current_job.arguments[14].ReturnIntegerArgument( );
+    float    padding                                = my_current_job.arguments[15].ReturnFloatArgument( );
+    float    phase_shift                            = my_current_job.arguments[16].ReturnFloatArgument( );
+    wxString my_symmetry                            = my_current_job.arguments[17].ReturnStringArgument( );
+    float    in_plane_angular_step_sampling         = my_current_job.arguments[18].ReturnFloatArgument( );
+    int      first_search_position                  = my_current_job.arguments[19].ReturnIntegerArgument( );
+    int      last_search_position_sampled_view      = my_current_job.arguments[20].ReturnIntegerArgument( );
+    float    angular_step_tm                        = my_current_job.arguments[21].ReturnFloatArgument( );
+    float    in_plane_angular_step_tm               = my_current_job.arguments[22].ReturnFloatArgument( );
+    int      last_search_position_tm                = my_current_job.arguments[23].ReturnIntegerArgument( );
+    // wxString log_output_file                        = my_current_job.arguments[24].ReturnStringArgument( );
+    bool     use_gpu                 = my_current_job.arguments[24].ReturnBoolArgument( );
+    int      max_threads             = my_current_job.arguments[25].ReturnIntegerArgument( );
+    wxString scaled_mip_ac_filename  = my_current_job.arguments[26].ReturnStringArgument( );
+    wxString scaled_mip_cc_filename  = my_current_job.arguments[27].ReturnStringArgument( );
+    wxString mip_ac_filename         = my_current_job.arguments[28].ReturnStringArgument( );
+    wxString mip_cc_filename         = my_current_job.arguments[29].ReturnStringArgument( );
+    wxString avg_ac_filename         = my_current_job.arguments[30].ReturnStringArgument( );
+    wxString avg_cc_filename         = my_current_job.arguments[31].ReturnStringArgument( );
+    wxString std_ac_filename         = my_current_job.arguments[32].ReturnStringArgument( );
+    wxString std_cc_filename         = my_current_job.arguments[33].ReturnStringArgument( );
+    wxString best_psi_ac_filename    = my_current_job.arguments[34].ReturnStringArgument( );
+    wxString best_theta_ac_filename  = my_current_job.arguments[35].ReturnStringArgument( );
+    wxString best_phi_ac_filename    = my_current_job.arguments[36].ReturnStringArgument( );
+    wxString best_psi_cc_filename    = my_current_job.arguments[37].ReturnStringArgument( );
+    wxString best_theta_cc_filename  = my_current_job.arguments[38].ReturnStringArgument( );
+    wxString best_phi_cc_filename    = my_current_job.arguments[39].ReturnStringArgument( );
+    wxString data_directory_name     = my_current_job.arguments[40].ReturnStringArgument( );
+    int      number_of_sampled_views = my_current_job.arguments[41].ReturnIntegerArgument( );
+    int      result_number           = my_current_job.arguments[42].ReturnIntegerArgument( );
 
     // This condition applies to GUI and CLI - it is just a recommendation to the user.
     if ( use_gpu && max_threads <= 1 ) {
@@ -226,9 +225,9 @@ bool CompareTemplateApp::DoCalculation( ) {
     parameter_map.SetAllTrue( );
     float variance;
 
-    Curve           whitening_filter;
-    Curve           number_of_terms;
-    NumericTextFile log_file(log_output_file, OPEN_TO_WRITE, 1);
+    Curve whitening_filter;
+    Curve number_of_terms;
+    // NumericTextFile log_file(log_output_file, OPEN_TO_WRITE, 1);
 
     Image           input_reconstruction_particle, input_reconstruction_correct, input_reconstruction_wrong;
     ImageFile       input_search_image_file;
@@ -384,6 +383,7 @@ bool CompareTemplateApp::DoCalculation( ) {
     input_reconstruction_wrong.SwapRealSpaceQuadrants( );
 
     montage_image_stack.Allocate(input_reconstruction_particle_file.ReturnXSize( ), input_reconstruction_particle_file.ReturnXSize( ), number_of_sampled_views);
+    montage_image_stack.SetToConstant(0.0f);
 
     int   j = 0, view_counter = 0;
     int   current_x, current_y;
@@ -422,12 +422,40 @@ bool CompareTemplateApp::DoCalculation( ) {
             current_projection_image.SwapRealSpaceQuadrants( );
         }
         current_projection_image.MultiplyPixelWise(projection_filter);
-        current_projection_image.BackwardFFT( );
-        montage_image_stack.InsertOtherImageAtSpecifiedSlice(&current_projection_image, K);
-    }
 
+        current_projection_image.BackwardFFT( );
+
+        float min_value, max_value;
+        current_projection_image.GetMinMax(min_value, max_value);
+
+        int   nFrames = 1; // can we determing the nFrames based on SNR from simulator
+        Image output_image;
+        output_image.Allocate(current_projection_image.logical_x_dimension, current_projection_image.logical_y_dimension, 1);
+        output_image.SetToConstant(0.0f);
+
+        Image temp_image;
+        temp_image.Allocate(current_projection_image.logical_x_dimension, current_projection_image.logical_y_dimension, 1);
+        current_projection_image.AddConstant(-min_value);
+        current_projection_image.DivideByConstant(max_value - min_value); //perform min-max scaling
+        for ( int iFrame = 0; iFrame < nFrames; iFrame++ ) {
+            temp_image.SetToConstant(0.0f);
+            RandomNumberGenerator my_rand(PIf);
+            for ( long iPixel = 0; iPixel < current_projection_image.real_memory_allocated; iPixel++ ) {
+                temp_image.real_values[iPixel] = my_rand.GetNormalRandomSTD(current_projection_image.real_values[iPixel], sqrtf(current_projection_image.real_values[iPixel])); //distribution(gen);
+            }
+            output_image.AddImage(&temp_image);
+        }
+        output_image.ForwardFFT( );
+
+        output_image.ZeroCentralPixel( ); // equivalent to subtracting mean in real space
+        output_image.DivideByConstant(sqrtf(output_image.ReturnSumOfSquares( ))); //todo: is scaling necessary
+        output_image.BackwardFFT( );
+
+        montage_image_stack.InsertOtherImageAtSpecifiedSlice(&output_image, K);
+    }
     pose_file.Close( );
-    montage_image_stack.QuickAndDirtyWriteSlices(wxString::Format("%s/montage_stack_%f_%f_%i_%i.mrc", data_directory_name, psi_step_tm, angular_step_tm, number_of_sampled_views, result_number).ToStdString( ), 1, number_of_sampled_views);
+
+    montage_image_stack.QuickAndDirtyWriteSlices(wxString::Format("%s/montage_stack_%.1f_%.1f_%i_%i.mrc", data_directory_name, psi_step_tm, angular_step_tm, number_of_sampled_views, result_number).ToStdString( ), 1, number_of_sampled_views);
     // convert stack to montage
     int montage_dim_x = montage_image_stack.logical_x_dimension * int(sqrt(number_of_sampled_views)); //(last_search_position_sampled_view - first_search_position + 1);
     int montage_dim_y = montage_image_stack.logical_y_dimension * int(sqrt(number_of_sampled_views)); //number_of_rotations_sampled_view;
@@ -485,7 +513,7 @@ bool CompareTemplateApp::DoCalculation( ) {
 
     int       image_counter = 0;
     ImageFile montage_stack_file;
-    montage_stack_file.OpenFile(wxString::Format("%s/montage_stack_%f_%f_%i_%i.mrc", data_directory_name, psi_step_tm, angular_step_tm, number_of_sampled_views, result_number).ToStdString( ), false);
+    montage_stack_file.OpenFile(wxString::Format("%s/montage_stack_%.1f_%.1f_%i_%i.mrc", data_directory_name, psi_step_tm, angular_step_tm, number_of_sampled_views, result_number).ToStdString( ), false);
     for ( image_counter_y = 0; image_counter_y < int(sqrt(number_of_sampled_views)); image_counter_y++ ) {
         j_start_output = image_counter_y * montage_image_stack.logical_y_dimension;
 
@@ -530,18 +558,15 @@ bool CompareTemplateApp::DoCalculation( ) {
             }
         }
     }
-    montage_image.QuickAndDirtyWriteSlice(wxString::Format("%s/montage_%f_%f_%i_%i.mrc", data_directory_name, psi_step_tm, angular_step_tm, number_of_sampled_views, result_number).ToStdString( ), 1);
+    montage_image.QuickAndDirtyWriteSlice(wxString::Format("%s/montage_%.1f_%.1f_%i_%i.mrc", data_directory_name, psi_step_tm, angular_step_tm, number_of_sampled_views, result_number).ToStdString( ), 1);
 
     // normalize stitched image
 
-    montage_image.ReplaceOutliersWithMean(5.0f);
+    // montage_image.ReplaceOutliersWithMean(5.0f);
     montage_image.ForwardFFT( );
-    montage_image.SwapRealSpaceQuadrants( ); // this will disrupt image structure but it should be fine?
-
+    montage_image.SwapRealSpaceQuadrants( );
     montage_image.ZeroCentralPixel( ); // equivalent to subtracting mean in real space
-
     montage_image.DivideByConstant(sqrtf(montage_image.ReturnSumOfSquares( )));
-    montage_image.QuickAndDirtyWriteSlice(wxString::Format("%s/montage_scaled_%f_%f_%i_%i.mrc", data_directory_name, psi_step_tm, angular_step_tm, number_of_sampled_views, result_number).ToStdString( ), 1);
 
     /*
     // test average cc and std cc Dec 15/2022
