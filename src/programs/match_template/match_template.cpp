@@ -155,21 +155,28 @@ void MatchTemplateApp::DoInteractiveUserInput( ) {
     ;
     float    defocus_angle;
     float    phase_shift;
-    float    low_resolution_limit      = 300.0;
-    float    high_resolution_limit     = 8.0;
-    float    angular_step              = 5.0;
-    int      best_parameters_to_keep   = 20;
-    float    defocus_search_range      = 500;
-    float    defocus_step              = 50;
-    float    pixel_size_search_range   = 0.1f;
-    float    pixel_size_step           = 0.02f;
-    float    padding                   = 1.0;
-    bool     ctf_refinement            = false;
-    float    particle_radius_angstroms = 0.0f;
-    wxString my_symmetry               = "C1";
-    float    in_plane_angular_step     = 0;
-    bool     use_gpu_input             = false;
-    int      max_threads               = 1; // Only used for the GPU code
+    float    low_resolution_limit         = 300.0;
+    float    high_resolution_limit        = 8.0;
+    float    angular_step                 = 5.0;
+    int      best_parameters_to_keep      = 20;
+    float    defocus_search_range         = 500;
+    float    defocus_step                 = 50;
+    float    pixel_size_search_range      = 0.1f;
+    float    pixel_size_step              = 0.02f;
+    float    padding                      = 1.0;
+    bool     ctf_refinement               = false;
+    float    particle_radius_angstroms    = 0.0f;
+    wxString my_symmetry                  = "C1";
+    float    in_plane_angular_step        = 0;
+    bool     use_gpu_input                = false;
+    int      max_threads                  = 1; // Only used for the GPU code
+    bool     perform_contrained_search    = false;
+    float    constrained_search_psi_max   = 180.0f;
+    float    constrained_search_psi_min   = 0.0f;
+    float    constrained_search_phi_max   = 180.0f;
+    float    constrained_search_phi_min   = 0.0f;
+    float    constrained_search_theta_max = 180.0f;
+    float    constrained_search_theta_min = 0.0f;
 
     UserInput* my_input = new UserInput("MatchTemplate", 1.00);
 
@@ -210,7 +217,15 @@ void MatchTemplateApp::DoInteractiveUserInput( ) {
     use_gpu_input = my_input->GetYesNoFromUser("Use GPU", "Offload expensive calcs to GPU", "No");
     max_threads   = my_input->GetIntFromUser("Max. threads to use for calculation", "when threading, what is the max threads to run", "1", 1);
 #endif
-
+    perform_contrained_search = my_input->GetYesNoFromUser("Perform constrained angular search?", "If doing contrained search, ask for angular limits", "No");
+    if ( perform_contrained_search ) {
+        constrained_search_phi_max   = my_input->GetFloatFromUser("Constrained search Phi max", "max phi for constrained search", "360.0", 0.0, 360.0);
+        constrained_search_phi_min   = my_input->GetFloatFromUser("Constrained search Phi min", "min phi for constrained search", "0.0", 0.0, 360.0);
+        constrained_search_theta_max = my_input->GetFloatFromUser("Constrained search Theta max", "max theta for constrained search", "180.0", 0.0, 180.0);
+        constrained_search_theta_min = my_input->GetFloatFromUser("Constrained search Theta min", "max theta for constrained search", "0.0", 0.0, 180.0);
+        constrained_search_psi_max   = my_input->GetFloatFromUser("Constrained search Psi max", "max psi for constrained search", "360.0", 0.0, 360.0);
+        constrained_search_psi_min   = my_input->GetFloatFromUser("Constrained search Psi min", "max psi for constrained search", "0.0.0", 0.0, 360.0);
+    }
     int   first_search_position           = -1;
     int   last_search_position            = -1;
     int   image_number_for_gui            = 0;
@@ -222,7 +237,7 @@ void MatchTemplateApp::DoInteractiveUserInput( ) {
 
     delete my_input;
 
-    my_current_job.ManualSetArguments("ttffffffffffifffffbfftttttttttftiiiitttfbi", input_search_images.ToUTF8( ).data( ),
+    my_current_job.ManualSetArguments("ttffffffffffifffffbfftttttttttftiiiitttfbibffffff", input_search_images.ToUTF8( ).data( ),
                                       input_reconstruction.ToUTF8( ).data( ),
                                       pixel_size,
                                       voltage_kV,
@@ -263,7 +278,14 @@ void MatchTemplateApp::DoInteractiveUserInput( ) {
                                       result_filename.ToUTF8( ).data( ),
                                       min_peak_radius,
                                       use_gpu_input,
-                                      max_threads);
+                                      max_threads,
+                                      perform_contrained_search,
+                                      constrained_search_phi_max,
+                                      constrained_search_phi_min,
+                                      constrained_search_theta_max,
+                                      constrained_search_theta_min,
+                                      constrained_search_psi_max,
+                                      constrained_search_psi_min);
 }
 
 // override the do calculation method which will be what is actually run..
@@ -373,6 +395,13 @@ bool MatchTemplateApp::DoCalculation( ) {
     float    min_peak_radius                 = my_current_job.arguments[39].ReturnFloatArgument( );
     bool     use_gpu                         = my_current_job.arguments[40].ReturnBoolArgument( );
     int      max_threads                     = my_current_job.arguments[41].ReturnIntegerArgument( );
+    bool     perform_constrained_search      = my_current_job.arguments[42].ReturnBoolArgument( );
+    float    constrained_search_phi_max      = my_current_job.arguments[43].ReturnFloatArgument( );
+    float    constrained_search_phi_min      = my_current_job.arguments[44].ReturnFloatArgument( );
+    float    constrained_search_theta_max    = my_current_job.arguments[45].ReturnFloatArgument( );
+    float    constrained_search_theta_min    = my_current_job.arguments[46].ReturnFloatArgument( );
+    float    constrained_search_psi_max      = my_current_job.arguments[47].ReturnFloatArgument( );
+    float    constrained_search_psi_min      = my_current_job.arguments[48].ReturnFloatArgument( );
 
     if ( is_running_locally == false )
         max_threads = number_of_threads_requested_on_command_line; // OVERRIDE FOR THE GUI, AS IT HAS TO BE SET ON THE COMMAND LINE...
@@ -632,25 +661,37 @@ bool MatchTemplateApp::DoCalculation( ) {
     }
 
     //psi_start = psi_step / 2.0 * global_random_number_generator.GetUniformRandom();
-    psi_start = 195.0f; //203.8
-    psi_max   = 210.0f;
+    if ( perform_constrained_search ) {
+        psi_start = constrained_search_psi_min;
+        psi_max   = constrained_search_psi_max;
+    }
+    else {
+        psi_start = 0.0f;
+        psi_max   = 360.0f;
+    }
 
     //psi_step = 5;
 
     //wxPrintf("psi_start = %f, psi_max = %f, psi_step = %f\n", psi_start, psi_max, psi_step);
 
     // search grid
-    // theta = 57.3 phi = 193.98
-    global_euler_search.InitConstrainedGrid(my_symmetry, angular_step, 180.0f, 210.0f, 50.0f, 65.0f, psi_max, psi_step, psi_start, pixel_size / high_resolution_limit_search, parameter_map, best_parameters_to_keep);
+    if ( perform_constrained_search )
+        global_euler_search.InitConstrainedGrid(my_symmetry, angular_step, constrained_search_phi_min, constrained_search_phi_max, constrained_search_theta_min, constrained_search_theta_max, psi_max, psi_step, psi_start, pixel_size / high_resolution_limit_search, parameter_map, best_parameters_to_keep);
+    else
+        global_euler_search.InitGrid(my_symmetry, angular_step, 0.0f, 0.0f, psi_max, psi_step, psi_start, pixel_size / high_resolution_limit_search, parameter_map, best_parameters_to_keep);
     if ( my_symmetry.StartsWith("C") ) // TODO 2x check me - w/o this O symm at least is broken
     {
         if ( global_euler_search.test_mirror == true ) // otherwise the theta max is set to 90.0 and test_mirror is set to true.  However, I don't want to have to test the mirrors.
         {
-            //global_euler_search.theta_max = 180.0f;
+            if ( ! perform_constrained_search )
+                global_euler_search.theta_max = 180.0f;
         }
     }
 
-    global_euler_search.CalculateConstrainedGridSearchPositions(false);
+    if ( perform_constrained_search )
+        global_euler_search.CalculateConstrainedGridSearchPositions(false);
+    else
+        global_euler_search.CalculateGridSearchPositions(false);
 
     // for now, I am assuming the MTF has been applied already.
     // work out the filter to just whiten the image..
@@ -695,7 +736,6 @@ bool MatchTemplateApp::DoCalculation( ) {
     // TODO unroll these loops and multiply the product.
     for ( current_search_position = first_search_position; current_search_position <= last_search_position; current_search_position++ ) {
         //loop over each rotation angle
-        wxPrintf("phi theta = %f %f \n", global_euler_search.list_of_search_parameters[current_search_position][0], global_euler_search.list_of_search_parameters[current_search_position][1]);
         for ( current_psi = psi_start; current_psi <= psi_max; current_psi += psi_step ) {
             total_correlation_positions++;
         }
@@ -718,7 +758,6 @@ bool MatchTemplateApp::DoCalculation( ) {
 
     for ( current_psi = psi_start; current_psi <= psi_max; current_psi += psi_step ) {
         number_of_rotations++;
-        wxPrintf("psi = %f\n", current_psi);
     }
 
     ProgressBar* my_progress;
@@ -732,7 +771,7 @@ bool MatchTemplateApp::DoCalculation( ) {
 
     wxPrintf("Performing Search...\n\n");
 
-    NumericTextFile cc_file("recorded_cc_at_center.txt", OPEN_TO_WRITE, 1);
+    // NumericTextFile cc_file("recorded_cc_at_center.txt", OPEN_TO_WRITE, 1);
     //    wxPrintf("Searching %i - %i of %i total positions\n", first_search_position, last_search_position, global_euler_search.number_of_search_positions);
     //    wxPrintf("psi_start = %f, psi_max = %f, psi_step = %f\n", psi_start, psi_max, psi_step);
 
@@ -1005,11 +1044,6 @@ bool MatchTemplateApp::DoCalculation( ) {
 #endif
 
                     padded_reference.BackwardFFT( );
-                    cc_file.WriteCommentLine("%f\n", padded_reference.ReturnCentralPixelValue( ));
-                    wxPrintf("max = %f central = %f\n", padded_reference.ReturnMaximumValue( ), padded_reference.ReturnCentralPixelValue( ));
-                    padded_reference.QuickAndDirtyWriteSlice("first_cc.mrc", 1);
-                    exit(0);
-
                     //                    padded_reference.QuickAndDirtyWriteSlice("cc.mrc", 1);
                     //                    exit(0);
 
