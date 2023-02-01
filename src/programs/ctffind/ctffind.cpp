@@ -1754,8 +1754,10 @@ bool CtffindApp::DoCalculation( ) {
         if ( dump_debug_files )
             average_spectrum->QuickAndDirtyWriteSlice(debug_file_prefix + "dbg_spec_before_rescaling.mrc", 1);
         profile_timing.start("Write diagnostic image");
-        if ( compute_extra_stats && ! fit_nodes ) {
+        if ( compute_extra_stats ) {
+            MyDebugPrint("Computing extra stats\n");
             RescaleSpectrumAndRotationalAverage(average_spectrum, number_of_extrema_image, ctf_values_image, number_of_bins_in_1d_spectra, spatial_frequency, rotational_average_astig, rotational_average_astig_fit, number_of_extrema_profile, ctf_values_profile, last_bin_without_aliasing, last_bin_with_good_fit);
+            MyDebugPrint("Done computing extra stats\n");
         }
         //average_spectrum->QuickAndDirtyWriteSlice("dbg_spec_before_thresholding.mrc",1);
 

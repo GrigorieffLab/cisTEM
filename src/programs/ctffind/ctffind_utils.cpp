@@ -531,6 +531,7 @@ void RescaleSpectrumAndRotationalAverage(Image* spectrum, Image* number_of_extre
 
     //
     if ( ! spectrum_is_blank ) {
+        MyDebugPrint("Rescaling spectrum1\n");
         for ( bin_counter = 1; bin_counter < number_of_bins - 1; bin_counter++ ) {
             // Remember where we were before - minimum, maximum or neither
             maximum_at_previous_bin = at_a_maximum;
@@ -571,13 +572,13 @@ void RescaleSpectrumAndRotationalAverage(Image* spectrum, Image* number_of_extre
                 DEBUG_ABORT;
             }
         }
-
+        MyDebugPrint("Rescaling spectrum2\n");
         // Fit the minima and maximum curves using Savitzky-Golay smoothing
         if ( maxima_curve->number_of_points > sg_width )
             maxima_curve->FitSavitzkyGolayToData(sg_width, sg_order);
         if ( minima_curve->number_of_points > sg_width )
             minima_curve->FitSavitzkyGolayToData(sg_width, sg_order);
-
+        MyDebugPrint("Rescaling spectrum3\n");
         // Replace the background and peak envelopes with the smooth min/max curves
         for ( bin_counter = 0; bin_counter < number_of_bins; bin_counter++ ) {
             if ( minima_curve->number_of_points > sg_width )
@@ -585,7 +586,7 @@ void RescaleSpectrumAndRotationalAverage(Image* spectrum, Image* number_of_extre
             if ( maxima_curve->number_of_points > sg_width )
                 peak[bin_counter] = maxima_curve->ReturnSavitzkyGolayInterpolationFromX(spatial_frequency[bin_counter]);
         }
-
+        MyDebugPrint("Rescaling spectrum4\n");
         // Now that we have worked out a background and a peak envelope, let's do the actual rescaling
         actually_do_rescaling = (peak[normalisation_bin_number] - background[normalisation_bin_number]) > 0.0;
         if ( last_bin_without_aliasing != 0 ) {
@@ -594,10 +595,12 @@ void RescaleSpectrumAndRotationalAverage(Image* spectrum, Image* number_of_extre
         else {
             last_bin_to_rescale = last_bin_with_good_fit;
         }
+        MyDebugPrint("Rescaling spectrum5\n");
         if ( actually_do_rescaling ) {
             min_scale_factor = 0.2;
             rescale_peaks_to = 0.75;
             address          = 0;
+            MyDebugPrint("Rescaling spectrum6\n");
             for ( j = 0; j < spectrum->logical_y_dimension; j++ ) {
                 for ( i = 0; i < spectrum->logical_x_dimension; i++ ) {
                     chosen_bin = ReturnSpectrumBinNumber(number_of_bins, number_of_extrema_profile, number_of_extrema, address, ctf_values, ctf_values_profile);
@@ -625,7 +628,7 @@ void RescaleSpectrumAndRotationalAverage(Image* spectrum, Image* number_of_extre
         else {
             MyDebugPrint("(RescaleSpectrumAndRotationalAverage) Warning: bad peak/background detection");
         }
-
+        MyDebugPrint("Rescaling spectrum7\n");
         // Rescale the 1D average
         if ( peak[normalisation_bin_number] > background[normalisation_bin_number] ) {
             for ( bin_counter = 0; bin_counter < number_of_bins; bin_counter++ ) {
@@ -642,10 +645,11 @@ void RescaleSpectrumAndRotationalAverage(Image* spectrum, Image* number_of_extre
         }
 
     } // end of test of spectrum_is_blank
-
+    MyDebugPrint("Rescaling spectrum8\n");
     // Cleanup
     delete minima_curve;
     delete maxima_curve;
+    MyDebugPrint("Rescaling spectrum9\n");
 }
 
 /*
