@@ -1,7 +1,7 @@
 #include "../../core/core_headers.h"
 
 class
-        RefineTemplateApp : public MyApp {
+        RecalculatePeakApp : public MyApp {
   public:
     bool DoCalculation( );
     void DoInteractiveUserInput( );
@@ -14,6 +14,7 @@ class TemplateComparisonObject {
     Image *          input_reconstruction, *windowed_particle, *projection_filter;
     AnglesAndShifts* angles;
     float            pixel_size_factor;
+    int              search_mode;
     //	int							slice = 1;
 };
 
@@ -61,8 +62,16 @@ Peak TemplateScore(void* scoring_parameters) {
 #endif
     current_projection.BackwardFFT( );
     //	wxPrintf("ping");
+    if ( comparison_object->search_mode == 1 )
+        return current_projection.FindPeakWithIntegerCoordinates( );
+    else if ( comparison_object->search_mode == 2 ) {
+        Peak current_peak;
+        current_peak.x     = 0;
+        current_peak.y     = 0;
+        current_peak.value = current_projection.ReturnCentralPixelValue( );
+        return current_peak;
+    }
 
-    return current_projection.FindPeakWithIntegerCoordinates( );
     //	box_peak = current_projection.FindPeakWithIntegerCoordinates();
     //	wxPrintf("address = %li\n", box_peak.physical_address_within_image);
     //	box_peak.x = 0.0f;
@@ -71,11 +80,11 @@ Peak TemplateScore(void* scoring_parameters) {
     //	return box_peak;
 }
 
-IMPLEMENT_APP(RefineTemplateApp)
+IMPLEMENT_APP(RecalculatePeakApp)
 
 // override the DoInteractiveUserInput
 
-void RefineTemplateApp::DoInteractiveUserInput( ) {
+void RecalculatePeakApp::DoInteractiveUserInput( ) {
     wxString input_search_images;
     wxString input_reconstruction;
 
@@ -101,7 +110,7 @@ void RefineTemplateApp::DoInteractiveUserInput( ) {
     float amplitude_contrast      = 0.07f;
     float defocus1                = 10000.0f;
     float defocus2                = 10000.0f;
-    ;
+
     float defocus_angle;
     float phase_shift;
     float low_resolution_limit    = 300.0f;
@@ -128,7 +137,7 @@ void RefineTemplateApp::DoInteractiveUserInput( ) {
 
     int max_threads;
 
-    UserInput* my_input = new UserInput("RefineTemplate", 1.00);
+    UserInput* my_input = new UserInput("RecalculatePeak", 1.00);
 
     input_search_images            = my_input->GetFilenameFromUser("Input images to be searched", "The input image stack, containing the images that should be searched", "image_stack.mrc", true);
     input_reconstruction           = my_input->GetFilenameFromUser("Input template reconstruction", "The 3D reconstruction from which projections are calculated", "reconstruction.mrc", true);
@@ -139,35 +148,21 @@ void RefineTemplateApp::DoInteractiveUserInput( ) {
     best_phi_input_filename        = my_input->GetFilenameFromUser("Input phi file", "The file with the best psi image", "phi.mrc", true);
     best_defocus_input_filename    = my_input->GetFilenameFromUser("Input defocus file", "The file with the best defocus image", "defocus.mrc", true);
     best_pixel_size_input_filename = my_input->GetFilenameFromUser("Input pixel size file", "The file with the best pixel size image", "pixel_size.mrc", true);
-    mip_output_file                = my_input->GetFilenameFromUser("Output MIP file", "The file for saving the maximum intensity projection image", "out_mip.mrc", false);
-    scaled_mip_output_file         = my_input->GetFilenameFromUser("Output Scaled MIP file", "The file for saving the maximum intensity projection image divided by correlation variance", "out_scaled_mip.mrc", false);
-    best_psi_output_file           = my_input->GetFilenameFromUser("Output psi file", "The file for saving the best psi image", "out_psi.mrc", false);
-    best_theta_output_file         = my_input->GetFilenameFromUser("Output theta file", "The file for saving the best psi image", "out_theta.mrc", false);
-    best_phi_output_file           = my_input->GetFilenameFromUser("Output phi file", "The file for saving the best psi image", "out_phi.mrc", false);
-    best_defocus_output_file       = my_input->GetFilenameFromUser("Output defocus file", "The file for saving the best defocus image", "out_defocus.mrc", false);
-    best_pixel_size_output_file    = my_input->GetFilenameFromUser("Output pixel size file", "The file for saving the best pixel size image", "out_pixel_size.mrc", false);
-    wanted_threshold               = my_input->GetFloatFromUser("Peak threshold", "Peaks over this size will be taken", "7.5", 0.0);
-    min_peak_radius                = my_input->GetFloatFromUser("Min peak radius (px.)", "Essentially the minimum closeness for peaks", "10.0", 0.0);
-    pixel_size                     = my_input->GetFloatFromUser("Pixel size of images (A)", "Pixel size of input images in Angstroms", "1.0", 0.0);
-    voltage_kV                     = my_input->GetFloatFromUser("Beam energy (keV)", "The energy of the electron beam used to image the sample in kilo electron volts", "300.0", 0.0);
-    spherical_aberration_mm        = my_input->GetFloatFromUser("Spherical aberration (mm)", "Spherical aberration of the objective lens in millimeters", "2.7");
-    amplitude_contrast             = my_input->GetFloatFromUser("Amplitude contrast", "Assumed amplitude contrast", "0.07", 0.0, 1.0);
-    defocus1                       = my_input->GetFloatFromUser("Defocus1 (angstroms)", "Defocus1 for the input image", "10000", 0.0);
-    defocus2                       = my_input->GetFloatFromUser("Defocus2 (angstroms)", "Defocus2 for the input image", "10000", 0.0);
-    defocus_angle                  = my_input->GetFloatFromUser("Defocus angle (degrees)", "Defocus Angle for the input image", "0.0");
-    phase_shift                    = my_input->GetFloatFromUser("Phase shift (degrees)", "Additional phase shift in degrees", "0.0");
+
+    wanted_threshold        = my_input->GetFloatFromUser("Peak threshold", "Peaks over this size will be taken", "7.5", 0.0);
+    min_peak_radius         = my_input->GetFloatFromUser("Min peak radius (px.)", "Essentially the minimum closeness for peaks", "10.0", 0.0);
+    pixel_size              = my_input->GetFloatFromUser("Pixel size of images (A)", "Pixel size of input images in Angstroms", "1.0", 0.0);
+    voltage_kV              = my_input->GetFloatFromUser("Beam energy (keV)", "The energy of the electron beam used to image the sample in kilo electron volts", "300.0", 0.0);
+    spherical_aberration_mm = my_input->GetFloatFromUser("Spherical aberration (mm)", "Spherical aberration of the objective lens in millimeters", "2.7");
+    amplitude_contrast      = my_input->GetFloatFromUser("Amplitude contrast", "Assumed amplitude contrast", "0.07", 0.0, 1.0);
+    defocus1                = my_input->GetFloatFromUser("Defocus1 (angstroms)", "Defocus1 for the input image", "10000", 0.0);
+    defocus2                = my_input->GetFloatFromUser("Defocus2 (angstroms)", "Defocus2 for the input image", "10000", 0.0);
+    defocus_angle           = my_input->GetFloatFromUser("Defocus angle (degrees)", "Defocus Angle for the input image", "0.0");
+    phase_shift             = my_input->GetFloatFromUser("Phase shift (degrees)", "Additional phase shift in degrees", "0.0");
     //	low_resolution_limit = my_input->GetFloatFromUser("Low resolution limit (A)", "Low resolution limit of the data used for alignment in Angstroms", "300.0", 0.0);
     //	high_resolution_limit = my_input->GetFloatFromUser("High resolution limit (A)", "High resolution limit of the data used for alignment in Angstroms", "8.0", 0.0);
     //	angular_range = my_input->GetFloatFromUser("Angular refinement range", "AAngular range to refine", "2.0", 0.1);
-    angular_step          = my_input->GetFloatFromUser("Out of plane angular step", "Angular step size for global grid search", "0.2", 0.00);
-    in_plane_angular_step = my_input->GetFloatFromUser("In plane angular step", "Angular step size for in-plane rotations during the search", "0.1", 0.00);
-    //	best_parameters_to_keep = my_input->GetIntFromUser("Number of top hits to refine", "The number of best global search orientations to refine locally", "20", 1);
-    defocus_search_range = my_input->GetFloatFromUser("Defocus search range (A) (0.0 = no search)", "Search range (-value ... + value) around current defocus", "200.0", 0.0);
-    defocus_search_step  = my_input->GetFloatFromUser("Desired defocus accuracy (A)", "Accuracy to be achieved in defocus search", "10.0", 0.0);
-    //	defocus_refine_step = my_input->GetFloatFromUser("Defocus refine step (A) (0.0 = no refinement)", "Step size used in the defocus refinement", "5.0", 0.0);
-    pixel_size_search_range = my_input->GetFloatFromUser("Pixel size search range (A) (0.0 = no search)", "Search range (-value ... + value) around current pixel size", "0.1", 0.0);
-    pixel_size_step         = my_input->GetFloatFromUser("Desired pixel size accuracy (A)", "Accuracy to be achieved in pixel size search", "0.01", 0.01);
-    //	pixel_size_refine_step = my_input->GetFloatFromUser("Pixel size refine step (A) (0.0 = no refinement)", "Step size used in the pixel size refinement", "0.001", 0.0);
+
     padding = my_input->GetFloatFromUser("Padding factor", "Factor determining how much the input volume is padded to improve projections", "2.0", 1.0);
     //	ctf_refinement = my_input->GetYesNoFromUser("Refine defocus", "Should the particle defocus be refined?", "No");
     mask_radius = my_input->GetFloatFromUser("Mask radius (A) (0.0 = no mask)", "Radius of a circular mask to be applied to the input particles during refinement", "0.0", 0.0);
@@ -181,11 +176,13 @@ void RefineTemplateApp::DoInteractiveUserInput( ) {
 #else
     max_threads = 1;
 #endif
-    float fixed_phi   = my_input->GetFloatFromUser("Constrained search Phi", "max phi for constrained search", "360.0", 0.0, 360.0);
-    float fixed_theta = my_input->GetFloatFromUser("Constrained search Theta", "max theta for constrained search", "360.0", 0.0, 360.0);
-    float fixed_psi   = my_input->GetFloatFromUser("Constrained search Psi", "max psi for constrained search", "360.0", 0.0, 360.0);
-    float coord_x     = my_input->GetFloatFromUser("Constrained search x", "coord x", "0.0", 0, 5120);
-    float coord_y     = my_input->GetFloatFromUser("Constrained search y", "coord y", "0.0", 0, 5120);
+    float fixed_phi    = my_input->GetFloatFromUser("Constrained search Phi", "max phi for constrained search", "360.0", -360.0, 360.0);
+    float fixed_theta  = my_input->GetFloatFromUser("Constrained search Theta", "max theta for constrained search", "360.0", -360.0, 360.0);
+    float fixed_psi    = my_input->GetFloatFromUser("Constrained search Psi", "max psi for constrained search", "360.0", -360.0, 360.0);
+    float coord_x      = my_input->GetFloatFromUser("Constrained search x", "coord x", "0.0", 0, 5120);
+    float coord_y      = my_input->GetFloatFromUser("Constrained search y", "coord y", "0.0", 0, 5120);
+    float d_pixel_size = my_input->GetFloatFromUser("change in pixel size", "d pixel size", "0.0", 0.0, 1.0);
+    float d_defocus    = my_input->GetFloatFromUser("change in defocus", "d defocus", "0.0", -1200.0, 1200.0);
 
     int      first_search_position           = -1;
     int      last_search_position            = -1;
@@ -194,12 +191,14 @@ void RefineTemplateApp::DoInteractiveUserInput( ) {
     float    threshold_for_result_plotting   = 0.0f;
     wxString filename_for_gui_result_image;
 
+    int search_mode = my_input->GetIntFromUser("search mode", "search mode", "1", 0, 3);
+
     wxString directory_for_results = "/dev/null"; // shouldn't be used in interactive
 
     delete my_input;
 
     //	my_current_job.Reset(42);
-    my_current_job.ManualSetArguments("ttfffffffffffifffffbffttttttttttttttfffbtfiiiiiitftfffff", input_search_images.ToUTF8( ).data( ),
+    my_current_job.ManualSetArguments("ttfffffffffiffftttttttfffbtiifffffffi", input_search_images.ToUTF8( ).data( ),
                                       input_reconstruction.ToUTF8( ).data( ),
                                       pixel_size,
                                       voltage_kV,
@@ -210,17 +209,8 @@ void RefineTemplateApp::DoInteractiveUserInput( ) {
                                       defocus_angle,
                                       low_resolution_limit,
                                       high_resolution_limit,
-                                      angular_range,
-                                      angular_step,
                                       best_parameters_to_keep,
-                                      defocus_search_range,
-                                      defocus_search_step,
-                                      //															defocus_refine_step,
-                                      pixel_size_search_range,
-                                      pixel_size_step,
-                                      //															pixel_size_refine_step,
                                       padding,
-                                      ctf_refinement,
                                       mask_radius,
                                       phase_shift,
                                       mip_input_filename.ToUTF8( ).data( ),
@@ -230,129 +220,65 @@ void RefineTemplateApp::DoInteractiveUserInput( ) {
                                       best_phi_input_filename.ToUTF8( ).data( ),
                                       best_defocus_input_filename.ToUTF8( ).data( ),
                                       best_pixel_size_input_filename.ToUTF8( ).data( ),
-                                      best_psi_output_file.ToUTF8( ).data( ),
-                                      best_theta_output_file.ToUTF8( ).data( ),
-                                      best_phi_output_file.ToUTF8( ).data( ),
-                                      best_defocus_output_file.ToUTF8( ).data( ),
-                                      best_pixel_size_output_file.ToUTF8( ).data( ),
-                                      mip_output_file.ToUTF8( ).data( ),
-                                      scaled_mip_output_file.ToUTF8( ).data( ),
                                       wanted_threshold,
                                       min_peak_radius,
                                       xy_change_threshold,
                                       exclude_above_xy_threshold,
                                       my_symmetry.ToUTF8( ).data( ),
-                                      in_plane_angular_step,
-                                      first_search_position,
-                                      last_search_position,
-                                      image_number_for_gui,
-                                      number_of_jobs_per_image_in_gui,
                                       result_number,
                                       max_threads,
-                                      directory_for_results.ToUTF8( ).data( ),
-                                      threshold_for_result_plotting,
-                                      filename_for_gui_result_image.ToUTF8( ).data( ),
                                       fixed_phi,
                                       fixed_theta,
                                       fixed_psi,
                                       coord_x,
-                                      coord_y);
+                                      coord_y,
+                                      d_pixel_size,
+                                      d_defocus,
+                                      search_mode);
 }
 
 // override the do calculation method which will be what is actually run..
 
-bool RefineTemplateApp::DoCalculation( ) {
+bool RecalculatePeakApp::DoCalculation( ) {
     wxDateTime start_time = wxDateTime::Now( );
 
-    wxString input_search_images_filename  = my_current_job.arguments[0].ReturnStringArgument( );
-    wxString input_reconstruction_filename = my_current_job.arguments[1].ReturnStringArgument( );
-    float    pixel_size                    = my_current_job.arguments[2].ReturnFloatArgument( );
-    float    voltage_kV                    = my_current_job.arguments[3].ReturnFloatArgument( );
-    float    spherical_aberration_mm       = my_current_job.arguments[4].ReturnFloatArgument( );
-    float    amplitude_contrast            = my_current_job.arguments[5].ReturnFloatArgument( );
-    float    defocus1                      = my_current_job.arguments[6].ReturnFloatArgument( );
-    float    defocus2                      = my_current_job.arguments[7].ReturnFloatArgument( );
-    float    defocus_angle                 = my_current_job.arguments[8].ReturnFloatArgument( );
-    ;
-    float low_resolution_limit         = my_current_job.arguments[9].ReturnFloatArgument( );
-    float high_resolution_limit_search = my_current_job.arguments[10].ReturnFloatArgument( );
-    float angular_range                = my_current_job.arguments[11].ReturnFloatArgument( );
-    float angular_step                 = my_current_job.arguments[12].ReturnFloatArgument( );
-    int   best_parameters_to_keep      = my_current_job.arguments[13].ReturnIntegerArgument( );
-    float defocus_search_range         = my_current_job.arguments[14].ReturnFloatArgument( );
-    float defocus_search_step          = my_current_job.arguments[15].ReturnFloatArgument( );
-    //	float 		defocus_refine_step = my_current_job.arguments[15].ReturnFloatArgument();
-    float defocus_refine_step     = 2.0f * defocus_search_step;
-    float pixel_size_search_range = my_current_job.arguments[16].ReturnFloatArgument( );
-    float pixel_size_search_step  = my_current_job.arguments[17].ReturnFloatArgument( );
-    //	float 		pixel_size_refine_step = my_current_job.arguments[17].ReturnFloatArgument();
-    float    pixel_size_refine_step          = 2.0f * pixel_size_search_step;
-    float    padding                         = my_current_job.arguments[18].ReturnFloatArgument( );
-    bool     ctf_refinement                  = my_current_job.arguments[19].ReturnBoolArgument( );
-    float    mask_radius                     = my_current_job.arguments[20].ReturnFloatArgument( );
-    float    phase_shift                     = my_current_job.arguments[21].ReturnFloatArgument( );
-    wxString mip_input_filename              = my_current_job.arguments[22].ReturnStringArgument( );
-    wxString scaled_mip_input_filename       = my_current_job.arguments[23].ReturnStringArgument( );
-    wxString best_psi_input_filename         = my_current_job.arguments[24].ReturnStringArgument( );
-    wxString best_theta_input_filename       = my_current_job.arguments[25].ReturnStringArgument( );
-    wxString best_phi_input_filename         = my_current_job.arguments[26].ReturnStringArgument( );
-    wxString best_defocus_input_filename     = my_current_job.arguments[27].ReturnStringArgument( );
-    wxString best_pixel_size_input_filename  = my_current_job.arguments[28].ReturnStringArgument( );
-    wxString best_psi_output_file            = my_current_job.arguments[29].ReturnStringArgument( );
-    wxString best_theta_output_file          = my_current_job.arguments[30].ReturnStringArgument( );
-    wxString best_phi_output_file            = my_current_job.arguments[31].ReturnStringArgument( );
-    wxString best_defocus_output_file        = my_current_job.arguments[32].ReturnStringArgument( );
-    wxString best_pixel_size_output_file     = my_current_job.arguments[33].ReturnStringArgument( );
-    wxString mip_output_file                 = my_current_job.arguments[34].ReturnStringArgument( );
-    wxString scaled_mip_output_file          = my_current_job.arguments[35].ReturnStringArgument( );
-    float    wanted_threshold                = my_current_job.arguments[36].ReturnFloatArgument( );
-    float    min_peak_radius                 = my_current_job.arguments[37].ReturnFloatArgument( );
-    float    xy_change_threshold             = my_current_job.arguments[38].ReturnFloatArgument( );
-    bool     exclude_above_xy_threshold      = my_current_job.arguments[39].ReturnBoolArgument( );
-    wxString my_symmetry                     = my_current_job.arguments[40].ReturnStringArgument( );
-    float    in_plane_angular_step           = my_current_job.arguments[41].ReturnFloatArgument( );
-    int      first_search_position           = my_current_job.arguments[42].ReturnIntegerArgument( );
-    int      last_search_position            = my_current_job.arguments[43].ReturnIntegerArgument( );
-    int      image_number_for_gui            = my_current_job.arguments[44].ReturnIntegerArgument( );
-    int      number_of_jobs_per_image_in_gui = my_current_job.arguments[45].ReturnIntegerArgument( );
-    int      result_number                   = my_current_job.arguments[46].ReturnIntegerArgument( );
-    int      max_threads                     = my_current_job.arguments[47].ReturnIntegerArgument( );
-    wxString directory_for_results           = my_current_job.arguments[48].ReturnStringArgument( );
-    float    threshold_for_result_plotting   = my_current_job.arguments[49].ReturnFloatArgument( );
-    wxString filename_for_gui_result_image   = my_current_job.arguments[50].ReturnStringArgument( );
-    float    fixed_phi                       = my_current_job.arguments[51].ReturnFloatArgument( );
-    float    fixed_theta                     = my_current_job.arguments[52].ReturnFloatArgument( );
-    float    fixed_psi                       = my_current_job.arguments[53].ReturnFloatArgument( );
-    float    coord_x                         = my_current_job.arguments[54].ReturnFloatArgument( );
-    float    coord_y                         = my_current_job.arguments[55].ReturnFloatArgument( );
-
-    if ( is_running_locally == false )
-        max_threads = number_of_threads_requested_on_command_line; // OVERRIDE FOR THE GUI, AS IT HAS TO BE SET ON THE COMMAND LINE...
-
-    /*wxPrintf("input image = %s\n", input_search_images_filename);
-	wxPrintf("input reconstruction= %s\n", input_reconstruction_filename);
-	wxPrintf("pixel size = %f\n", pixel_size);
-	wxPrintf("voltage = %f\n", voltage_kV);
-	wxPrintf("Cs = %f\n", spherical_aberration_mm);
-	wxPrintf("amp contrast = %f\n", amplitude_contrast);
-	wxPrintf("defocus1 = %f\n", defocus1);
-	wxPrintf("defocus2 = %f\n", defocus2);
-	wxPrintf("defocus_angle = %f\n", defocus_angle);
-	wxPrintf("low res limit = %f\n", low_resolution_limit);
-	wxPrintf("high res limit = %f\n", high_resolution_limit_search);
-	wxPrintf("angular step = %f\n", angular_step);
-	wxPrintf("best params to keep = %i\n", best_parameters_to_keep);
-	wxPrintf("defocus search range = %f\n", defocus_search_range);
-	wxPrintf("defocus step = %f\n", defocus_step);
-	wxPrintf("padding = %f\n", padding);
-	wxPrintf("ctf_refinement = %i\n", int(ctf_refinement));
-	wxPrintf("mask search radius = %f\n", mask_radius);
-	wxPrintf("phase shift = %f\n", phase_shift);
-	wxPrintf("symmetry = %s\n", my_symmetry);
-	wxPrintf("in plane step = %f\n", in_plane_angular_step);
-	wxPrintf("first location = %i\n", first_search_position);
-	wxPrintf("last location = %i\n", last_search_position);
-	*/
+    wxString input_search_images_filename   = my_current_job.arguments[0].ReturnStringArgument( );
+    wxString input_reconstruction_filename  = my_current_job.arguments[1].ReturnStringArgument( );
+    float    pixel_size                     = my_current_job.arguments[2].ReturnFloatArgument( );
+    float    voltage_kV                     = my_current_job.arguments[3].ReturnFloatArgument( );
+    float    spherical_aberration_mm        = my_current_job.arguments[4].ReturnFloatArgument( );
+    float    amplitude_contrast             = my_current_job.arguments[5].ReturnFloatArgument( );
+    float    defocus1                       = my_current_job.arguments[6].ReturnFloatArgument( );
+    float    defocus2                       = my_current_job.arguments[7].ReturnFloatArgument( );
+    float    defocus_angle                  = my_current_job.arguments[8].ReturnFloatArgument( );
+    float    low_resolution_limit           = my_current_job.arguments[9].ReturnFloatArgument( );
+    float    high_resolution_limit_search   = my_current_job.arguments[10].ReturnFloatArgument( );
+    int      best_parameters_to_keep        = my_current_job.arguments[11].ReturnIntegerArgument( );
+    float    padding                        = my_current_job.arguments[12].ReturnFloatArgument( );
+    float    mask_radius                    = my_current_job.arguments[13].ReturnFloatArgument( );
+    float    phase_shift                    = my_current_job.arguments[14].ReturnFloatArgument( );
+    wxString mip_input_filename             = my_current_job.arguments[15].ReturnStringArgument( );
+    wxString scaled_mip_input_filename      = my_current_job.arguments[16].ReturnStringArgument( );
+    wxString best_psi_input_filename        = my_current_job.arguments[17].ReturnStringArgument( );
+    wxString best_theta_input_filename      = my_current_job.arguments[18].ReturnStringArgument( );
+    wxString best_phi_input_filename        = my_current_job.arguments[19].ReturnStringArgument( );
+    wxString best_defocus_input_filename    = my_current_job.arguments[20].ReturnStringArgument( );
+    wxString best_pixel_size_input_filename = my_current_job.arguments[21].ReturnStringArgument( );
+    float    wanted_threshold               = my_current_job.arguments[22].ReturnFloatArgument( );
+    float    min_peak_radius                = my_current_job.arguments[23].ReturnFloatArgument( );
+    float    xy_change_threshold            = my_current_job.arguments[24].ReturnFloatArgument( );
+    bool     exclude_above_xy_threshold     = my_current_job.arguments[25].ReturnBoolArgument( );
+    wxString my_symmetry                    = my_current_job.arguments[26].ReturnStringArgument( );
+    int      result_number                  = my_current_job.arguments[27].ReturnIntegerArgument( );
+    int      max_threads                    = my_current_job.arguments[28].ReturnIntegerArgument( );
+    float    fixed_phi                      = my_current_job.arguments[29].ReturnFloatArgument( );
+    float    fixed_theta                    = my_current_job.arguments[30].ReturnFloatArgument( );
+    float    fixed_psi                      = my_current_job.arguments[31].ReturnFloatArgument( );
+    float    coord_x                        = my_current_job.arguments[32].ReturnFloatArgument( );
+    float    coord_y                        = my_current_job.arguments[33].ReturnFloatArgument( );
+    float    d_pixel_size                   = my_current_job.arguments[34].ReturnFloatArgument( );
+    float    d_defocus                      = my_current_job.arguments[35].ReturnFloatArgument( );
+    float    search_mode                    = my_current_job.arguments[36].ReturnIntegerArgument( );
 
     int  i, j;
     bool parameter_map[5]; // needed for euler search init
@@ -376,14 +302,6 @@ bool RefineTemplateApp::DoCalculation( ) {
     int current_x;
     int current_y;
 
-    int phi_i;
-    int theta_i;
-    int psi_i;
-    int defocus_i;
-    int defocus_is = 0;
-    int size_i;
-    int size_is = 0;
-
     AnglesAndShifts          angles;
     TemplateComparisonObject template_object;
 
@@ -399,6 +317,8 @@ bool RefineTemplateApp::DoCalculation( ) {
 
     Curve whitening_filter;
     Curve number_of_terms;
+
+    // mode 1: search for largest peak; mode 2: recalulate peak at original position;
 
     input_search_image_file.OpenFile(input_search_images_filename.ToStdString( ), false);
     mip_input_file.OpenFile(mip_input_filename.ToStdString( ), false);
@@ -512,15 +432,6 @@ bool RefineTemplateApp::DoCalculation( ) {
     input_reconstruction.SwapRealSpaceQuadrants( );
 
     CTF input_ctf;
-    //	input_ctf.Init(voltage_kV, spherical_aberration_mm, amplitude_contrast, defocus1, defocus2, defocus_angle, 0.0, 0.0, 0.0, pixel_size, deg_2_rad(phase_shift));
-
-    // assume cube
-
-    //	windowed_particle.Allocate(input_reconstruction_file.ReturnXSize(), input_reconstruction_file.ReturnXSize(), false);
-    //	current_projection.Allocate(input_reconstruction_file.ReturnXSize(), input_reconstruction_file.ReturnXSize(), false);
-    //	projection_filter.Allocate(input_reconstruction_file.ReturnXSize(), input_reconstruction_file.ReturnXSize(), false);
-    //	template_reconstruction.Allocate(input_reconstruction.logical_x_dimension, input_reconstruction.logical_y_dimension, input_reconstruction.logical_z_dimension, true);
-    //	if (padding != 1.0f) padded_projection.Allocate(input_reconstruction_file.ReturnXSize() * padding, input_reconstruction_file.ReturnXSize() * padding, false);
 
     temp_float = (float(input_reconstruction_file.ReturnXSize( )) / 2.0f - 1.0f) * pixel_size;
     if ( mask_radius > temp_float )
@@ -551,91 +462,11 @@ bool RefineTemplateApp::DoCalculation( ) {
     input_image.DivideByConstant(sqrt(input_image.ReturnSumOfSquares( )));
     input_image.BackwardFFT( );
 
-    Peak* found_peaks = new Peak[input_image.logical_x_dimension * input_image.logical_y_dimension / 100];
     //	long *addresses = new long[input_image.logical_x_dimension * input_image.logical_y_dimension / 100];
 
     // count total searches (lazy)
 
-    total_correlation_positions  = 0;
-    current_correlation_position = 0;
-
-    // if running locally, search over all of them
-
     best_scaled_mip.CopyFrom(&scaled_mip_image);
-    current_peak.value = FLT_MAX;
-    wxPrintf("\n");
-    while ( current_peak.value >= wanted_threshold ) {
-        // look for a peak..
-
-        current_peak = best_scaled_mip.FindPeakWithIntegerCoordinates(0.0, FLT_MAX,
-                                                                      input_reconstruction_file.ReturnXSize( ) / cistem::fraction_of_box_size_to_exclude_for_border + 1);
-        if ( current_peak.value < wanted_threshold )
-            break;
-        found_peaks[number_of_peaks_found] = current_peak;
-
-        // ok we have peak..
-
-        // get angles and mask out the local area so it won't be picked again..
-
-        float sq_dist_x, sq_dist_y;
-        address = 0;
-
-        current_peak.x = current_peak.x + best_scaled_mip.physical_address_of_box_center_x;
-        current_peak.y = current_peak.y + best_scaled_mip.physical_address_of_box_center_y;
-
-        //		wxPrintf("Peak = %f, %f, %f : %f\n", current_peak.x, current_peak.y, current_peak.value);
-
-        for ( j = 0; j < best_scaled_mip.logical_y_dimension; j++ ) {
-            sq_dist_y = float(pow(j - current_peak.y, 2));
-            for ( i = 0; i < best_scaled_mip.logical_x_dimension; i++ ) {
-                sq_dist_x = float(pow(i - current_peak.x, 2));
-
-                // The square centered at the pixel
-                if ( sq_dist_x + sq_dist_y <= min_peak_radius2 ) {
-                    best_scaled_mip.real_values[address] = -FLT_MAX;
-                }
-
-                if ( sq_dist_x == 0.0f && sq_dist_y == 0.0f ) {
-                    current_phi        = phi_image.real_values[address];
-                    current_theta      = theta_image.real_values[address];
-                    current_psi        = psi_image.real_values[address];
-                    current_defocus    = defocus_image.real_values[address];
-                    current_pixel_size = pixel_size_image.real_values[address];
-                }
-
-                address++;
-            }
-            address += best_scaled_mip.padding_jump_value;
-        }
-
-        number_of_peaks_found++;
-
-        wxPrintf("Peak %4i at x, y, psi, theta, phi, defocus, pixel size =  %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f : %10.6f\n", number_of_peaks_found, current_peak.x * pixel_size, current_peak.y * pixel_size, current_psi, current_theta, current_phi, current_defocus, current_pixel_size, current_peak.value);
-    }
-
-    if ( defocus_refine_step <= 0.0 ) {
-        defocus_search_range = 0.0f;
-        defocus_refine_step  = 100.0f;
-    }
-
-    if ( pixel_size_refine_step <= 0.0 ) {
-        pixel_size_search_range = 0.0f;
-        pixel_size_refine_step  = 100.0f;
-    }
-
-    //	number_of_rotations = (2 * myroundint(float(angular_range)/float(angular_step)) + 1) * (2 * myroundint(float(angular_range)/float(angular_step)) + 1) * (2 * myroundint(float(angular_range)/float(in_plane_angular_step)) + 1);
-    //	total_correlation_positions = number_of_peaks_found * number_of_rotations * (2 * myroundint(float(defocus_search_range)/float(defocus_search_step)) + 1) * (2 * myroundint(float(pixel_size_search_range)/float(pixel_size_search_step)) + 1);
-
-    //	ProgressBar *my_progress;
-
-    if ( is_running_locally == true ) {
-        wxPrintf("\nRefining %i positions in the MIP.\n", number_of_peaks_found);
-        //		wxPrintf("Searching %i rotations per peak.\n", number_of_rotations);
-        //		wxPrintf("Calculating %li correlation total.\n\n", total_correlation_positions);
-
-        wxPrintf("\nPerforming refinement...\n\n");
-        //		my_progress = new ProgressBar(total_correlation_positions);
-    }
 
     //	best_mip.CopyFrom(&mip_image);
     //	best_scaled_mip.CopyFrom(&scaled_mip_image);
@@ -646,8 +477,6 @@ bool RefineTemplateApp::DoCalculation( ) {
     best_phi.CopyFrom(&phi_image);
     best_defocus.CopyFrom(&defocus_image);
     best_pixel_size.CopyFrom(&pixel_size_image);
-
-    defocus_step = std::max(defocus_refine_step, 100.0f);
 
     ArrayOfTemplateMatchFoundPeakInfos all_peak_changes;
     ArrayOfTemplateMatchFoundPeakInfos all_peak_infos;
@@ -685,6 +514,7 @@ bool RefineTemplateApp::DoCalculation( ) {
     template_object.windowed_particle    = &windowed_particle;
     template_object.projection_filter    = &projection_filter;
     template_object.angles               = &angles;
+    template_object.search_mode          = search_mode;
 
     //	while (current_peak.value >= wanted_threshold)
 
@@ -695,7 +525,7 @@ bool RefineTemplateApp::DoCalculation( ) {
 
     // ok we have peak..
     coord_x = coord_x - scaled_mip_image_local.physical_address_of_box_center_x;
-    coord_y = coord_y - scaled_mip_image_local.physical_address_of_box_center_x;
+    coord_y = coord_y - scaled_mip_image_local.physical_address_of_box_center_y;
     padded_reference.CopyFrom(&input_image);
     padded_reference.RealSpaceIntegerShift(coord_x, coord_y);
     padded_reference.ClipInto(&windowed_particle);
@@ -735,8 +565,8 @@ bool RefineTemplateApp::DoCalculation( ) {
                 current_phi        = fixed_phi;
                 current_theta      = fixed_theta;
                 current_psi        = fixed_psi;
-                current_defocus    = 0;
-                current_pixel_size = best_pixel_size_local.real_values[address];
+                current_defocus    = d_defocus;
+                current_pixel_size = d_pixel_size;
                 best_score         = -FLT_MAX;
                 angles.Init(current_phi, current_theta, current_psi, 0.0, 0.0);
                 wxPrintf("angles = %f %f %f \n", current_phi, current_theta, current_psi);
@@ -749,8 +579,8 @@ bool RefineTemplateApp::DoCalculation( ) {
                 //					template_object.windowed_particle = &input_image;
 
                 //					input_reconstruction.RandomisePhases(pixel_size / 20.0f);
-                //template_object.pixel_size_factor = (pixel_size + current_pixel_size + float(size_is) * pixel_size_refine_step) / pixel_size;
-                template_peak = TemplateScore(&template_object);
+                template_object.pixel_size_factor = (pixel_size + current_pixel_size) / pixel_size;
+                template_peak                     = TemplateScore(&template_object);
                 //					starting_score = template_peak.value;
                 wxPrintf("0 peak x, y, value = %g %g %g\n", template_peak.x, template_peak.y, template_peak.value);
                 //					float s = 0.0f, a = 0.0f;
@@ -768,57 +598,16 @@ bool RefineTemplateApp::DoCalculation( ) {
                 //					wxPrintf("noise, SNR = %g %g\n", s, fabsf(starting_score - a) / s);
                 //					exit(0);
                 //					starting_score = scaled_mip_image.real_values[address];
-                starting_score   = template_peak.value * sqrtf(projection_filter.logical_x_dimension * projection_filter.logical_y_dimension);
+
                 score_adjustment = scaled_mip_image.real_values[current_address] / mip_image.real_values[current_address];
                 //					score_adjustment = mip_image.real_values[address] / template_peak.value / sqrtf(template_object.windowed_particle->logical_x_dimension * template_object.windowed_particle->logical_y_dimension);
                 float new_score      = template_peak.value * sqrtf(template_object.windowed_particle->logical_x_dimension * template_object.windowed_particle->logical_y_dimension);
                 float adjusted_score = new_score * score_adjustment;
                 wxPrintf("old, new, adjusted score = %g %g %g\n", scaled_mip_image.real_values[address], new_score, adjusted_score);
-                exit(0);
-
-                //					template_reconstruction.CopyFrom(&input_reconstruction);
-                //					template_reconstruction.ForwardFFT();
-                //					template_reconstruction.ZeroCentralPixel();
-                //					template_reconstruction.SwapRealSpaceQuadrants();
-
-                //					template_object.input_reconstruction = &template_reconstruction;
-                //					template_object.windowed_particle = &windowed_particle;
-                //					template_object.projection_filter = &projection_filter;
-                //					template_object.angles = &angles;
-                //					template_object.pixel_size_factor = 1.0f;
-
-                //					if (number_of_peaks_found < 3) break;
-                // Do local search with defocus
-                //					best_score = -FLT_MAX;
-
-                //					score = best_score;
-
-                //					best_score = -FLT_MAX;
-
-                //					pixel_size_refine_step /= 2.0f;
-
-                //					input_ctf.SetDefocus((defocus1 + current_defocus) / pixel_size, (defocus2 + current_defocus) / pixel_size, deg_2_rad(defocus_angle));
-                //					projection_filter.CalculateCTFImage(input_ctf);
-                //					projection_filter.ApplyCurveFilter(&whitening_filter);
-
-                //					input_reconstruction.ChangePixelSize(&template_reconstruction, (pixel_size + float(size_i) * pixel_size_refine_step) / pixel_size, 0.001f, true);
-                //					template_reconstruction.CopyFrom(&input_reconstruction);
-                //					template_reconstruction.ForwardFFT();
-                //					template_reconstruction.ZeroCentralPixel();
-                //					template_reconstruction.SwapRealSpaceQuadrants();
-                //					template_object.input_reconstruction = &template_reconstruction;
             }
             address++;
         }
         address += scaled_mip_image_local.padding_jump_value;
-
-        //		wxPrintf("score_adjustment, scaled_mip_image, best_score, mip_image = %g %g %g %g\n", score_adjustment, scaled_mip_image.real_values[current_address], best_score, mip_image.real_values[current_address]);
-
-        // end omp section
-
-        //	delete my_progress;
-
-        // tell the gui that this result is available...
     }
 
     return true;
