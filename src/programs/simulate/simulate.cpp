@@ -598,6 +598,7 @@ class SimulateApp : public MyApp {
     bool CALC_WATER_NO_HOLE = false; // Makes the solvent cutoff so large that water is added on top of the protein. This is to mimick Rullgard/Vulovic
     bool CALC_HOLES_ONLY    = false; // This should calculate the atoms so the water is properly excluded, but not include these in the propagation. TODO checkme
     bool DEBUG_POISSON      = false; // Skip the poisson draw - must be true (this is gets over-ridden) if DO_PHASE_PLATE is true
+    bool ADD_NOISE_IN_3D    = false;
 
     bool DO_COHERENCE_ENVELOPE = true;
 
@@ -640,6 +641,8 @@ void SimulateApp::AddCommandLineOptions( ) {
     command_line_parser.AddLongSwitch("save-poisson-pre-ntf", "Save image of water and scattering.");
     command_line_parser.AddLongSwitch("save-poisson-post-ntf", "Save image of water and scattering.");
     command_line_parser.AddLongSwitch("save-detector-wavefunction", "Save the detector wave function directly? Skip Poisson draw, default is no"); // Skip the poisson draw - must be true (this is gets over-ridden) if DO_PHASE_PLATE is true
+
+    command_line_parser.AddLongSwitch("add-noise-in-3d", "Add gaussian noise in 3d volume? Skip Gaussian draw 3d, default is no"); // Skip the poisson draw - must be true (this is gets over-ridden) if DO_PHASE_PLATE is true
 
     // Option to skip centering by mass
     command_line_parser.AddLongSwitch("skip-centering-by-mass", "Skip centering by mass");
@@ -724,6 +727,8 @@ void SimulateApp::DoInteractiveUserInput( ) {
     SAVE_POISSON_PRE_NTF             = command_line_parser.FoundSwitch("save-poisson-pre-ntf");
     SAVE_POISSON_WITH_NTF            = command_line_parser.FoundSwitch("save-poisson-post-ntf");
     DEBUG_POISSON                    = command_line_parser.Found("save-detector-wavefunction");
+
+    ADD_NOISE_IN_3D = command_line_parser.Found("add-noise-in-3d");
 
     if ( command_line_parser.Found("j", &temp_long) ) {
         number_of_threads = (int)temp_long;
@@ -2008,6 +2013,16 @@ void SimulateApp::probability_density_2d(PDB* pdb_ensemble, int time_step) {
 
                         // Now make sure we come out at the correct 3d size.
                         Potential_3d.Resize(wanted_output_size, wanted_output_size, wanted_output_size, 0.0f);
+                        // simulate noise in 3d
+                        if ( ADD_NOISE_IN_3D ) {
+                            RandomNumberGenerator my_rand(PIf);
+                            for ( long pixel_counter = 0; pixel_counter < Potential_3d.real_memory_allocated; pixel_counter++ ) {
+                                float voxel_val;
+                                voxel_val                               = Potential_3d.real_values[pixel_counter];
+                                Potential_3d.real_values[pixel_counter] = voxel_val + my_rand.GetNormalRandomSTD(0, sqrt(voxel_val)); //distribution(gen);
+                                // wxPrintf("%f ===> %f\n", voxel_val, Potential_3d.real_values[pixel_counter]);
+                            }
+                        }
 
                         wxPrintf("Writing out your 3d slices %d --> %d\n", 1, wanted_output_size);
                         Potential_3d.WriteSlices(&mrc_out, 1, wanted_output_size);
@@ -2391,7 +2406,8 @@ void SimulateApp::probability_density_2d(PDB* pdb_ensemble, int time_step) {
                 else {
                     wave_function.DoPropagation(img_frame, scattering_potential, inelastic_potential, 0, nSlabs, image_mean, inelastic_mean, propagator_distance, false, tilt_to_scale_search_range);
                 }
-
+                if ( iFrame == 25 )
+                    img_frame[0].QuickAndDirtyWriteSlice("imediately_after_waveprop.mrc", 1);
                 timer.lap("Propagate WaveFunc");
                 if ( SAVE_PROBABILITY_WAVE && iLoop < 1 ) {
                     std::string fileNameOUT = "withProbabilityWave_" + std::to_string(iFrame) + this->output_filename;
@@ -2431,7 +2447,8 @@ void SimulateApp::probability_density_2d(PDB* pdb_ensemble, int time_step) {
                         mrc_out.CloseFile( );
                     }
                 }
-
+                if ( iFrame == 25 )
+                    img_frame[0].QuickAndDirtyWriteSlice("imediately_after_dqe.mrc", 1);
                 if ( DEBUG_POISSON == false && is_image_loop && DO_PHASE_PLATE == false ) {
                     timer.start("Poisson Noise");
 
@@ -2442,7 +2459,8 @@ void SimulateApp::probability_density_2d(PDB* pdb_ensemble, int time_step) {
 
                     timer.lap("Poisson Noise");
                 }
-
+                if ( iFrame == 25 )
+                    img_frame[0].QuickAndDirtyWriteSlice("imediately_after_poisson.mrc", 1);
                 // fixme, the logic in this loop is pretty confusing. Especially with these copies and buffers. Wouldn't it work just as well to have an image pointer with the same name
                 // in all iterations, that is set to either the scattering_potential or the inelastic_potential at the top of the loop?
                 if ( SAVE_REF ) {
