@@ -18,6 +18,7 @@ void Project3DApp::DoInteractiveUserInput( ) {
     wxString input_star_filename;
     wxString input_reconstruction;
     wxString ouput_projection_stack;
+    wxString input_whitening_context_filename;
     int      first_particle = 1;
     int      last_particle  = 0;
     float    pixel_size     = 1;
@@ -35,6 +36,7 @@ void Project3DApp::DoInteractiveUserInput( ) {
     bool     apply_CTF;
     bool     apply_shifts;
     bool     apply_mask;
+    bool     apply_whitening_filter;
     bool     add_noise;
     bool     project_based_on_star;
     float    angular_step;
@@ -62,6 +64,11 @@ void Project3DApp::DoInteractiveUserInput( ) {
     ouput_projection_stack = my_input->GetFilenameFromUser("Output projection stack", "The output image stack, containing the 2D projections", "my_projection_stack.mrc", false);
     pixel_size             = my_input->GetFloatFromUser("Pixel size of reconstruction (A)", "Pixel size of input images in Angstroms", "1.0", 0.0);
 
+    apply_whitening_filter = my_input->GetYesNoFromUser("Apply whitening filter", "Should the whitening filter be applied to the output projections?", "Yes");
+    if ( apply_whitening_filter == true ) {
+        input_whitening_context_filename = my_input->GetFilenameFromUser("Input real image for whitening", "The input image file", "img.mrc", true);
+    }
+
     //	voltage_kV = my_input->GetFloatFromUser("Beam energy (keV)", "The energy of the electron beam used to image the sample in kilo electron volts", "300.0", 0.0);
     //	spherical_aberration_mm = my_input->GetFloatFromUser("Spherical aberration (mm)", "Spherical aberration of the objective lens in millimeters", "2.7", 0.0);
     //	amplitude_contrast = my_input->GetFloatFromUser("Amplitude contrast", "Assumed amplitude contrast", "0.07", 0.0, 1.0);
@@ -85,13 +92,14 @@ void Project3DApp::DoInteractiveUserInput( ) {
     delete my_input;
 
     //	my_current_job.Reset(14);
-    my_current_job.ManualSetArguments("tttiifffftbbbbbfi", input_star_filename.ToUTF8( ).data( ),
+    my_current_job.ManualSetArguments("tttiifffftbbbbbfibt", input_star_filename.ToUTF8( ).data( ),
                                       input_reconstruction.ToUTF8( ).data( ),
                                       ouput_projection_stack.ToUTF8( ).data( ),
                                       first_particle, last_particle,
                                       pixel_size, mask_radius, wanted_SNR, padding,
                                       my_symmetry.ToUTF8( ).data( ),
-                                      apply_CTF, apply_shifts, apply_mask, add_noise, project_based_on_star, angular_step, max_threads);
+                                      apply_CTF, apply_shifts, apply_mask, add_noise, project_based_on_star, angular_step, max_threads,
+                                      apply_whitening_filter, input_whitening_context_filename.ToUTF8( ).data( ));
 }
 
 // override the do calculation method which will be what is actually run..
@@ -110,17 +118,19 @@ bool Project3DApp::DoCalculation( ) {
     //	float    beam_tilt_y						= my_current_job.arguments[10].ReturnFloatArgument();
     //	float    particle_shift_x					= my_current_job.arguments[11].ReturnFloatArgument();
     //	float    particle_shift_y					= my_current_job.arguments[12].ReturnFloatArgument();
-    float    mask_radius           = my_current_job.arguments[6].ReturnFloatArgument( );
-    float    wanted_SNR            = my_current_job.arguments[7].ReturnFloatArgument( );
-    float    padding               = my_current_job.arguments[8].ReturnFloatArgument( );
-    wxString my_symmetry           = my_current_job.arguments[9].ReturnStringArgument( );
-    bool     apply_CTF             = my_current_job.arguments[10].ReturnBoolArgument( );
-    bool     apply_shifts          = my_current_job.arguments[11].ReturnBoolArgument( );
-    bool     apply_mask            = my_current_job.arguments[12].ReturnBoolArgument( );
-    bool     add_noise             = my_current_job.arguments[13].ReturnBoolArgument( );
-    bool     project_based_on_star = my_current_job.arguments[14].ReturnBoolArgument( );
-    float    angular_step          = my_current_job.arguments[15].ReturnFloatArgument( );
-    int      max_threads           = my_current_job.arguments[16].ReturnIntegerArgument( );
+    float    mask_radius                      = my_current_job.arguments[6].ReturnFloatArgument( );
+    float    wanted_SNR                       = my_current_job.arguments[7].ReturnFloatArgument( );
+    float    padding                          = my_current_job.arguments[8].ReturnFloatArgument( );
+    wxString my_symmetry                      = my_current_job.arguments[9].ReturnStringArgument( );
+    bool     apply_CTF                        = my_current_job.arguments[10].ReturnBoolArgument( );
+    bool     apply_shifts                     = my_current_job.arguments[11].ReturnBoolArgument( );
+    bool     apply_mask                       = my_current_job.arguments[12].ReturnBoolArgument( );
+    bool     add_noise                        = my_current_job.arguments[13].ReturnBoolArgument( );
+    bool     project_based_on_star            = my_current_job.arguments[14].ReturnBoolArgument( );
+    float    angular_step                     = my_current_job.arguments[15].ReturnFloatArgument( );
+    int      max_threads                      = my_current_job.arguments[16].ReturnIntegerArgument( );
+    bool     apply_whitening_filter           = my_current_job.arguments[17].ReturnBoolArgument( );
+    wxString input_whitening_context_filename = my_current_job.arguments[18].ReturnStringArgument( );
 
     Image               projection_image;
     Image               final_image;
@@ -170,6 +180,31 @@ bool Project3DApp::DoCalculation( ) {
     MRCFile         output_file(output_projection_stack.ToStdString( ), true);
     AnglesAndShifts my_parameters;
     CTF             my_ctf;
+
+    ImageFile input_whitening_context_file;
+    Image     input_whitening_context;
+    Curve     whitening_filter;
+    Curve     number_of_terms;
+    Image     projection_filter;
+
+    if ( apply_whitening_filter == true ) {
+        input_whitening_context_file.OpenFile(input_whitening_context_filename.ToStdString( ), false);
+        input_whitening_context.ReadSlice(&input_whitening_context_file, 1);
+        // calculate whitening filter
+        whitening_filter.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((input_whitening_context.logical_x_dimension / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
+        number_of_terms.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((input_whitening_context.logical_x_dimension / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
+        input_whitening_context.ReplaceOutliersWithMean(5.0f);
+        input_whitening_context.ForwardFFT( );
+        input_whitening_context.SwapRealSpaceQuadrants( );
+
+        input_whitening_context.ZeroCentralPixel( ); // equivalent to subtracting mean in real space
+        input_whitening_context.Compute1DPowerSpectrumCurve(&whitening_filter, &number_of_terms);
+        whitening_filter.SquareRoot( );
+        whitening_filter.Reciprocal( );
+        whitening_filter.MultiplyByConstant(1.0f / whitening_filter.ReturnMaximumValue( ));
+
+        projection_filter.Allocate(input_file.ReturnXSize( ), input_file.ReturnXSize( ), false);
+    }
 
     if ( (input_file.ReturnXSize( ) != input_file.ReturnYSize( )) || (input_file.ReturnXSize( ) != input_file.ReturnZSize( )) ) {
         MyPrintWithDetails("Error: Input reconstruction is not cubic\n");
@@ -231,7 +266,7 @@ bool Project3DApp::DoCalculation( ) {
     projection_3d.CopyFrom(input_3d.density_map);
 
 #pragma omp parallel num_threads(max_threads) default(none) shared(global_random_number_generator, input_star_file, first_particle, last_particle, apply_CTF, apply_shifts, \
-                                                                   pixel_size, output_file, add_noise, wanted_SNR, apply_mask, mask_radius, my_progress, lines_to_process, image_counter, projection_3d, input_file, global_euler_search, number_of_projections_to_calculate, project_based_on_star) private(current_image, input_parameters, my_parameters, my_ctf, projection_image, final_image, variance)
+                                                                   pixel_size, output_file, add_noise, wanted_SNR, apply_mask, mask_radius, my_progress, lines_to_process, image_counter, projection_3d, input_file, global_euler_search, number_of_projections_to_calculate, project_based_on_star, apply_whitening_filter, projection_filter, whitening_filter) private(current_image, input_parameters, my_parameters, my_ctf, projection_image, final_image, variance)
     {
 
         projection_image.Allocate(input_file.ReturnXSize( ), input_file.ReturnYSize( ), false);
@@ -252,8 +287,17 @@ bool Project3DApp::DoCalculation( ) {
             projection_3d.ExtractSlice(projection_image, my_parameters);
             projection_image.complex_values[0] = projection_3d.complex_values[0];
 
-            if ( apply_CTF )
-                projection_image.ApplyCTF(my_ctf, false, true);
+            if ( apply_CTF ) {
+                if ( apply_whitening_filter ) {
+                    my_ctf.SetDefocus(input_parameters.defocus_1 / pixel_size, input_parameters.defocus_2 / pixel_size, deg_2_rad(input_parameters.defocus_angle));
+                    projection_filter.CalculateCTFImage(my_ctf);
+                    projection_filter.ApplyCurveFilter(&whitening_filter);
+                    projection_image.MultiplyPixelWise(projection_filter);
+                }
+                else
+                    projection_image.ApplyCTF(my_ctf, false, true);
+            }
+
             if ( apply_shifts )
                 projection_image.PhaseShift(input_parameters.x_shift / pixel_size, input_parameters.y_shift / pixel_size);
 
