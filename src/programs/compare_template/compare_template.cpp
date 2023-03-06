@@ -37,18 +37,19 @@ void CompareTemplateApp::DoInteractiveUserInput( ) {
     ;
     float    defocus_angle;
     float    phase_shift;
-    float    high_resolution_limit          = 8.0;
-    float    angular_step_sampling          = 5.0;
-    float    angular_step_tm                = 5.0;
-    int      best_parameters_to_keep        = 20;
-    float    padding                        = 1.0;
-    wxString my_symmetry                    = "C1";
-    float    in_plane_angular_step_sampling = 0;
-    float    in_plane_angular_step_tm       = 0;
-    int      max_threads                    = 1;
-    bool     use_gpu_input                  = false;
-    int      number_of_sampled_views        = 30;
+    float    high_resolution_limit   = 8.0;
+    float    angular_step            = 5.0;
+    int      best_parameters_to_keep = 20;
+    float    padding                 = 1.0;
+    wxString my_symmetry             = "C1";
+    float    in_plane_angular_step   = 0;
+    int      max_threads             = 1;
+    bool     use_gpu_input           = false;
+    int      number_of_sampled_views = 30;
     int      result_number;
+    bool     use_existing_params = false;
+    wxString preexisting_particle_file_name;
+    int      n_Frames_for_simulating_shot_noise = 0;
 
     UserInput* my_input = new UserInput("CompareTemplate", 1.00);
 
@@ -66,42 +67,45 @@ void CompareTemplateApp::DoInteractiveUserInput( ) {
     defocus_angle                          = my_input->GetFloatFromUser("Defocus Angle (degrees)", "Defocus Angle for the input image", "0.0");
     phase_shift                            = my_input->GetFloatFromUser("Phase Shift (degrees)", "Additional phase shift in degrees", "0.0");
     high_resolution_limit                  = my_input->GetFloatFromUser("High resolution limit (A)", "High resolution limit of the data used for alignment in Angstroms", "8.0", 0.0);
-    angular_step_sampling                  = my_input->GetFloatFromUser("Sampling out of plane angular step (0.0 = set automatically)", "Angular step size for global grid search", "0.0", 0.0);
-    in_plane_angular_step_sampling         = my_input->GetFloatFromUser("Sampling in plane angular step (0.0 = set automatically)", "Angular step size for in-plane rotations during the search", "0.0", 0.0);
     padding                                = my_input->GetFloatFromUser("Padding factor", "Factor determining how much the input volume is padded to improve projections", "1.0", 1.0, 2.0);
     my_symmetry                            = my_input->GetSymmetryFromUser("Template symmetry", "The symmetry of the template reconstruction", "C1");
-    angular_step_tm                        = my_input->GetFloatFromUser("TM out of plane angular step (0.0 = set automatically)", "Angular step size for global grid search", "0.0", 0.0);
-    in_plane_angular_step_tm               = my_input->GetFloatFromUser("TM in plane angular step (0.0 = set automatically)", "Angular step size for in-plane rotations during the search", "0.0", 0.0);
+    angular_step                           = my_input->GetFloatFromUser("TM out of plane angular step (0.0 = set automatically)", "Angular step size for global grid search", "0.0", 0.0);
+    in_plane_angular_step                  = my_input->GetFloatFromUser("TM in plane angular step (0.0 = set automatically)", "Angular step size for in-plane rotations during the search", "0.0", 0.0);
     //log_output_file                        = my_input->GetFilenameFromUser("Log file for recording meta data", "Log output file", "log.txt", false);
 #ifdef ENABLEGPU
     use_gpu_input = my_input->GetYesNoFromUser("Use GPU", "Offload expensive calcs to GPU", "No");
     max_threads   = my_input->GetIntFromUser("Max. threads to use for calculation", "when threading, what is the max threads to run", "1", 1);
 #endif
-    scaled_mip_ac_filename  = my_input->GetFilenameFromUser("Output scaled mip image ac", "Output scaled mip image ac", "scaled_mip_ac.mrc", false);
-    scaled_mip_cc_filename  = my_input->GetFilenameFromUser("Output scaled mip image cc", "Output scaled mip image ac", "scaled_mip_cc.mrc", false);
-    mip_ac_filename         = my_input->GetFilenameFromUser("Output mip image ac", "Output mip image ac", "mip_ac.mrc", false);
-    mip_cc_filename         = my_input->GetFilenameFromUser("Output mip image cc", "Output mip image cc", "mip_cc.mrc", false);
-    avg_ac_filename         = my_input->GetFilenameFromUser("Output avg image ac", "Output avg image ac", "avg_ac.mrc", false);
-    avg_cc_filename         = my_input->GetFilenameFromUser("Output avg image cc", "Output avg image cc", "avg_cc.mrc", false);
-    std_ac_filename         = my_input->GetFilenameFromUser("Output std image ac", "Output std image ac", "std_cc.mrc", false);
-    std_cc_filename         = my_input->GetFilenameFromUser("Output std image cc", "Output std image cc", "std_cc.mrc", false);
-    best_psi_ac_filename    = my_input->GetFilenameFromUser("Output autocorrelation psi file", "The file for saving the best psi image", "psi.mrc", false);
-    best_theta_ac_filename  = my_input->GetFilenameFromUser("Output autocorrelation theta file", "The file for saving the best theta image", "theta.mrc", false);
-    best_phi_ac_filename    = my_input->GetFilenameFromUser("Output autocorrelation phi file", "The file for saving the best phi image", "phi.mrc", false);
-    best_psi_cc_filename    = my_input->GetFilenameFromUser("Output cross-correlation psi file", "The file for saving the best psi image", "psi.mrc", false);
-    best_theta_cc_filename  = my_input->GetFilenameFromUser("Output cross-correlation theta file", "The file for saving the best theta image", "theta.mrc", false);
-    best_phi_cc_filename    = my_input->GetFilenameFromUser("Output cross-correlation phi file", "The file for saving the best phi image", "phi.mrc", false);
-    data_directory_name     = my_input->GetFilenameFromUser("Name for data directory", "path to data directory", "60_120_5_2.5", false);
-    number_of_sampled_views = my_input->GetIntFromUser("Number of sampled views", "number of sampled views", "1", 1, 400);
-    result_number           = my_input->GetIntFromUser("Result number", "result number", "1", 1, 400);
+    use_existing_params = my_input->GetYesNoFromUser("Use an existing set of orientations", "yes no", "no");
+    if ( ! use_existing_params )
+        number_of_sampled_views = my_input->GetIntFromUser("Number of sampled views", "number of sampled views", "1", 1, 10000); //TODO FIXME
+    else {
+        preexisting_particle_file_name = my_input->GetFilenameFromUser("cisTEM star file name", "an input star file to match reconstruction", "myparams.star", true);
+    }
+    scaled_mip_ac_filename             = my_input->GetFilenameFromUser("Output scaled mip image ac", "Output scaled mip image ac", "scaled_mip_ac.mrc", false);
+    scaled_mip_cc_filename             = my_input->GetFilenameFromUser("Output scaled mip image cc", "Output scaled mip image ac", "scaled_mip_cc.mrc", false);
+    mip_ac_filename                    = my_input->GetFilenameFromUser("Output mip image ac", "Output mip image ac", "mip_ac.mrc", false);
+    mip_cc_filename                    = my_input->GetFilenameFromUser("Output mip image cc", "Output mip image cc", "mip_cc.mrc", false);
+    avg_ac_filename                    = my_input->GetFilenameFromUser("Output avg image ac", "Output avg image ac", "avg_ac.mrc", false);
+    avg_cc_filename                    = my_input->GetFilenameFromUser("Output avg image cc", "Output avg image cc", "avg_cc.mrc", false);
+    std_ac_filename                    = my_input->GetFilenameFromUser("Output std image ac", "Output std image ac", "std_cc.mrc", false);
+    std_cc_filename                    = my_input->GetFilenameFromUser("Output std image cc", "Output std image cc", "std_cc.mrc", false);
+    best_psi_ac_filename               = my_input->GetFilenameFromUser("Output autocorrelation psi file", "The file for saving the best psi image", "psi.mrc", false);
+    best_theta_ac_filename             = my_input->GetFilenameFromUser("Output autocorrelation theta file", "The file for saving the best theta image", "theta.mrc", false);
+    best_phi_ac_filename               = my_input->GetFilenameFromUser("Output autocorrelation phi file", "The file for saving the best phi image", "phi.mrc", false);
+    best_psi_cc_filename               = my_input->GetFilenameFromUser("Output cross-correlation psi file", "The file for saving the best psi image", "psi.mrc", false);
+    best_theta_cc_filename             = my_input->GetFilenameFromUser("Output cross-correlation theta file", "The file for saving the best theta image", "theta.mrc", false);
+    best_phi_cc_filename               = my_input->GetFilenameFromUser("Output cross-correlation phi file", "The file for saving the best phi image", "phi.mrc", false);
+    data_directory_name                = my_input->GetFilenameFromUser("Name for data directory", "path to data directory", "60_120_5_2.5", false);
+    result_number                      = my_input->GetIntFromUser("Result number", "result number", "1", 1, 400);
+    n_Frames_for_simulating_shot_noise = my_input->GetIntFromUser("Frames for simulating shot noise (0 is no shot noise)", "shot noise", "0", 0, 100);
 
-    int first_search_position             = -1;
-    int last_search_position_sampled_view = -1;
-    int last_search_position_tm           = -1;
+    int first_search_position = -1;
+    int last_search_position  = -1;
 
     delete my_input;
 
-    my_current_job.ManualSetArguments("tttttfffffffffifftfiiffibitttttttttttttttii",
+    my_current_job.ManualSetArguments("tttttffffffffifftiffitttttttttttttttbibitii",
                                       input_search_images.ToUTF8( ).data( ),
                                       input_reconstruction_particle_filename.ToUTF8( ).data( ),
                                       input_reconstruction_correct_filename.ToUTF8( ).data( ),
@@ -115,20 +119,14 @@ void CompareTemplateApp::DoInteractiveUserInput( ) {
                                       defocus2,
                                       defocus_angle,
                                       high_resolution_limit,
-                                      angular_step_sampling,
-                                      best_parameters_to_keep,
+                                      best_parameters_to_keep, //i
                                       padding,
                                       phase_shift,
                                       my_symmetry.ToUTF8( ).data( ),
-                                      in_plane_angular_step_sampling,
                                       first_search_position,
-                                      last_search_position_sampled_view,
-                                      angular_step_tm,
-                                      in_plane_angular_step_tm,
-                                      last_search_position_tm,
-                                      // log_output_file.ToUTF8( ).data( ),
-                                      use_gpu_input,
-                                      max_threads,
+                                      angular_step,
+                                      in_plane_angular_step,
+                                      last_search_position,
                                       scaled_mip_ac_filename.ToUTF8( ).data( ),
                                       scaled_mip_cc_filename.ToUTF8( ).data( ),
                                       mip_ac_filename.ToUTF8( ).data( ),
@@ -144,8 +142,13 @@ void CompareTemplateApp::DoInteractiveUserInput( ) {
                                       best_theta_cc_filename.ToUTF8( ).data( ),
                                       best_phi_cc_filename.ToUTF8( ).data( ),
                                       data_directory_name.ToUTF8( ).data( ),
+                                      use_gpu_input,
+                                      max_threads,
+                                      use_existing_params,
                                       number_of_sampled_views,
-                                      result_number);
+                                      preexisting_particle_file_name.ToUTF8( ).data( ),
+                                      result_number,
+                                      n_Frames_for_simulating_shot_noise);
 }
 
 // override the do calculation method which will be what is actually run..
@@ -164,37 +167,37 @@ bool CompareTemplateApp::DoCalculation( ) {
     float    defocus2                               = my_current_job.arguments[10].ReturnFloatArgument( );
     float    defocus_angle                          = my_current_job.arguments[11].ReturnFloatArgument( );
     float    high_resolution_limit_search           = my_current_job.arguments[12].ReturnFloatArgument( );
-    float    angular_step_sampling                  = my_current_job.arguments[13].ReturnFloatArgument( );
-    int      best_parameters_to_keep                = my_current_job.arguments[14].ReturnIntegerArgument( );
-    float    padding                                = my_current_job.arguments[15].ReturnFloatArgument( );
-    float    phase_shift                            = my_current_job.arguments[16].ReturnFloatArgument( );
-    wxString my_symmetry                            = my_current_job.arguments[17].ReturnStringArgument( );
-    float    in_plane_angular_step_sampling         = my_current_job.arguments[18].ReturnFloatArgument( );
-    int      first_search_position                  = my_current_job.arguments[19].ReturnIntegerArgument( );
-    int      last_search_position_sampled_view      = my_current_job.arguments[20].ReturnIntegerArgument( );
-    float    angular_step_tm                        = my_current_job.arguments[21].ReturnFloatArgument( );
-    float    in_plane_angular_step_tm               = my_current_job.arguments[22].ReturnFloatArgument( );
-    int      last_search_position_tm                = my_current_job.arguments[23].ReturnIntegerArgument( );
+    int      best_parameters_to_keep                = my_current_job.arguments[13].ReturnIntegerArgument( );
+    float    padding                                = my_current_job.arguments[14].ReturnFloatArgument( );
+    float    phase_shift                            = my_current_job.arguments[15].ReturnFloatArgument( );
+    wxString my_symmetry                            = my_current_job.arguments[16].ReturnStringArgument( );
+    int      first_search_position                  = my_current_job.arguments[17].ReturnIntegerArgument( );
+    float    angular_step                           = my_current_job.arguments[18].ReturnFloatArgument( );
+    float    in_plane_angular_step                  = my_current_job.arguments[19].ReturnFloatArgument( );
+    int      last_search_position                   = my_current_job.arguments[20].ReturnIntegerArgument( );
     // wxString log_output_file                        = my_current_job.arguments[24].ReturnStringArgument( );
-    bool     use_gpu                 = my_current_job.arguments[24].ReturnBoolArgument( );
-    int      max_threads             = my_current_job.arguments[25].ReturnIntegerArgument( );
-    wxString scaled_mip_ac_filename  = my_current_job.arguments[26].ReturnStringArgument( );
-    wxString scaled_mip_cc_filename  = my_current_job.arguments[27].ReturnStringArgument( );
-    wxString mip_ac_filename         = my_current_job.arguments[28].ReturnStringArgument( );
-    wxString mip_cc_filename         = my_current_job.arguments[29].ReturnStringArgument( );
-    wxString avg_ac_filename         = my_current_job.arguments[30].ReturnStringArgument( );
-    wxString avg_cc_filename         = my_current_job.arguments[31].ReturnStringArgument( );
-    wxString std_ac_filename         = my_current_job.arguments[32].ReturnStringArgument( );
-    wxString std_cc_filename         = my_current_job.arguments[33].ReturnStringArgument( );
-    wxString best_psi_ac_filename    = my_current_job.arguments[34].ReturnStringArgument( );
-    wxString best_theta_ac_filename  = my_current_job.arguments[35].ReturnStringArgument( );
-    wxString best_phi_ac_filename    = my_current_job.arguments[36].ReturnStringArgument( );
-    wxString best_psi_cc_filename    = my_current_job.arguments[37].ReturnStringArgument( );
-    wxString best_theta_cc_filename  = my_current_job.arguments[38].ReturnStringArgument( );
-    wxString best_phi_cc_filename    = my_current_job.arguments[39].ReturnStringArgument( );
-    wxString data_directory_name     = my_current_job.arguments[40].ReturnStringArgument( );
-    int      number_of_sampled_views = my_current_job.arguments[41].ReturnIntegerArgument( );
-    int      result_number           = my_current_job.arguments[42].ReturnIntegerArgument( );
+    wxString scaled_mip_ac_filename             = my_current_job.arguments[21].ReturnStringArgument( );
+    wxString scaled_mip_cc_filename             = my_current_job.arguments[22].ReturnStringArgument( );
+    wxString mip_ac_filename                    = my_current_job.arguments[23].ReturnStringArgument( );
+    wxString mip_cc_filename                    = my_current_job.arguments[24].ReturnStringArgument( );
+    wxString avg_ac_filename                    = my_current_job.arguments[25].ReturnStringArgument( );
+    wxString avg_cc_filename                    = my_current_job.arguments[26].ReturnStringArgument( );
+    wxString std_ac_filename                    = my_current_job.arguments[27].ReturnStringArgument( );
+    wxString std_cc_filename                    = my_current_job.arguments[28].ReturnStringArgument( );
+    wxString best_psi_ac_filename               = my_current_job.arguments[29].ReturnStringArgument( );
+    wxString best_theta_ac_filename             = my_current_job.arguments[30].ReturnStringArgument( );
+    wxString best_phi_ac_filename               = my_current_job.arguments[31].ReturnStringArgument( );
+    wxString best_psi_cc_filename               = my_current_job.arguments[32].ReturnStringArgument( );
+    wxString best_theta_cc_filename             = my_current_job.arguments[33].ReturnStringArgument( );
+    wxString best_phi_cc_filename               = my_current_job.arguments[34].ReturnStringArgument( );
+    wxString data_directory_name                = my_current_job.arguments[35].ReturnStringArgument( );
+    bool     use_gpu                            = my_current_job.arguments[36].ReturnBoolArgument( );
+    int      max_threads                        = my_current_job.arguments[37].ReturnIntegerArgument( );
+    bool     use_existing_params                = my_current_job.arguments[38].ReturnBoolArgument( );
+    int      number_of_sampled_views            = my_current_job.arguments[39].ReturnIntegerArgument( );
+    wxString preexisting_particle_file_name     = my_current_job.arguments[40].ReturnStringArgument( );
+    int      result_number                      = my_current_job.arguments[41].ReturnIntegerArgument( );
+    int      n_Frames_for_simulating_shot_noise = my_current_job.arguments[42].ReturnIntegerArgument( );
 
     // This condition applies to GUI and CLI - it is just a recommendation to the user.
     if ( use_gpu && max_threads <= 1 ) {
@@ -206,20 +209,18 @@ bool CompareTemplateApp::DoCalculation( ) {
 
     int  padded_dimensions_x;
     int  padded_dimensions_y;
-    int  pad_factor                       = 6;
-    int  number_of_rotations_sampled_view = 0;
-    int  number_of_rotations_tm           = 0;
-    long total_correlation_positions_sampled_view, total_correlation_positions_tm;
-    long current_correlation_position_sampled_view, current_correlation_position_tm;
-    long total_correlation_positions_tm_per_thread;
+    int  pad_factor          = 6;
+    int  number_of_rotations = 0;
+    long total_correlation_positions;
+    long current_correlation_position_sampled_view, current_correlation_position; //TODO
+    long total_correlation_positions_per_thread;
     long pixel_counter;
 
-    int   current_search_position_sampled_view, current_search_position_tm;
-    float current_psi_sampled_view, current_psi_tm;
-    float psi_step_sampled_view = in_plane_angular_step_sampling;
-    float psi_step_tm           = in_plane_angular_step_tm;
-    float psi_max               = 360.0f;
-    float psi_start             = 0.0f;
+    int   current_search_position;
+    float current_psi;
+    float psi_step  = in_plane_angular_step;
+    float psi_max   = 360.0f;
+    float psi_start = 0.0f;
 
     ParameterMap parameter_map; // needed for euler search init
     parameter_map.SetAllTrue( );
@@ -229,12 +230,20 @@ bool CompareTemplateApp::DoCalculation( ) {
     Curve number_of_terms;
     // NumericTextFile log_file(log_output_file, OPEN_TO_WRITE, 1);
 
+    float* psi_tm;
+    float* theta_tm;
+    float* phi_tm;
+
+    cisTEMParameters input_star_file;
+    long             number_preexisting_particles;
+    cisTEMParameters output_star_file;
+
     Image           input_reconstruction_particle, input_reconstruction_correct, input_reconstruction_wrong;
     ImageFile       input_search_image_file;
     ImageFile       input_reconstruction_particle_file, input_reconstruction_correct_template_file, input_reconstruction_wrong_template_file;
     Image           input_image;
     Image           montage_image, montage_image_stack;
-    EulerSearch     global_euler_search_sampled_view, global_euler_search_tm;
+    EulerSearch     global_euler_search;
     AnglesAndShifts angles_sampled_view, angles_tm;
 
     input_search_image_file.OpenFile(input_search_images_filename.ToStdString( ), false);
@@ -248,75 +257,120 @@ bool CompareTemplateApp::DoCalculation( ) {
 
     // 1 is coarse search; 2 is finer TM search
     // TODO 1. normalize (done) 2. pad image with mean and pad template with 0 to same size 3. pad template to remove aliasing (done)
-    global_euler_search_sampled_view.InitGrid(my_symmetry, angular_step_sampling, 0.0f, 0.0f, psi_max, psi_step_sampled_view, psi_start, pixel_size / high_resolution_limit_search, parameter_map, best_parameters_to_keep);
-    global_euler_search_tm.InitGrid(my_symmetry, angular_step_tm, 0.0f, 0.0f, psi_max, psi_step_tm, psi_start, pixel_size / high_resolution_limit_search, parameter_map, best_parameters_to_keep);
+    global_euler_search.InitGrid(my_symmetry, angular_step, 0.0f, 0.0f, psi_max, psi_step, psi_start, pixel_size / high_resolution_limit_search, parameter_map, best_parameters_to_keep);
     if ( my_symmetry.StartsWith("C") ) // TODO 2x check me - w/o this O symm at least is broken
     {
-        if ( global_euler_search_sampled_view.test_mirror == true ) // otherwise the theta max is set to 90.0 and test_mirror is set to true.  However, I don't want to have to test the mirrors.
+        if ( global_euler_search.test_mirror == true ) // otherwise the theta max is set to 90.0 and test_mirror is set to true.  However, I don't want to have to test the mirrors.
         {
-            global_euler_search_sampled_view.theta_max = 180.0f;
-            global_euler_search_tm.theta_max           = 180.0f;
+            global_euler_search.theta_max = 180.0f;
         }
     }
-    global_euler_search_sampled_view.CalculateGridSearchPositions(false);
-    global_euler_search_tm.CalculateGridSearchPositions(false);
+    global_euler_search.CalculateGridSearchPositions(false);
 
-    first_search_position             = 0;
-    last_search_position_sampled_view = global_euler_search_sampled_view.number_of_search_positions - 1;
-    last_search_position_tm           = global_euler_search_tm.number_of_search_positions - 1;
+    first_search_position = 0;
+    last_search_position  = global_euler_search.number_of_search_positions - 1;
 
-    total_correlation_positions_sampled_view  = 0;
-    total_correlation_positions_tm            = 0;
+    total_correlation_positions               = 0;
     current_correlation_position_sampled_view = 0;
-    current_correlation_position_tm           = 0;
+    current_correlation_position              = 0;
 
-    float* psi_tm;
-    float* theta_tm;
-    float* phi_tm;
+    if ( use_existing_params ) {
+        if ( DoesFileExist(preexisting_particle_file_name) ) {
+            input_star_file.ReadFromcisTEMStarFile(preexisting_particle_file_name);
+            number_preexisting_particles = input_star_file.ReturnNumberofLines( );
+            wxPrintf("\nFound %ld particles in the input star file\n", number_preexisting_particles);
+        }
+        else {
+            SendErrorAndCrash(wxString::Format("Error: Input star file %s not found\n", preexisting_particle_file_name));
+        }
+        number_of_sampled_views = number_preexisting_particles;
+    }
 
-    for ( current_search_position_tm = first_search_position; current_search_position_tm <= last_search_position_tm; current_search_position_tm++ ) {
+    for ( current_search_position = first_search_position; current_search_position <= last_search_position; current_search_position++ ) {
         //loop over each rotation angle
 
-        for ( current_psi_tm = psi_start; current_psi_tm <= psi_max; current_psi_tm += psi_step_tm ) {
-            total_correlation_positions_tm++;
+        for ( current_psi = psi_start; current_psi <= psi_max; current_psi += psi_step ) {
+            total_correlation_positions++;
         }
     }
 
-    for ( current_psi_tm = psi_start; current_psi_tm <= psi_max; current_psi_tm += psi_step_tm ) {
-        number_of_rotations_tm++;
+    for ( current_psi = psi_start; current_psi <= psi_max; current_psi += psi_step ) {
+        number_of_rotations++;
     }
 
     wxPrintf("TM step sizes:\n");
-    wxPrintf("Searching %i positions on the Euler sphere (first-last: %i-%i)\n", last_search_position_tm - first_search_position, first_search_position, last_search_position_tm);
-    wxPrintf("Searching %i rotations per position.\n", number_of_rotations_tm);
-    wxPrintf("There are %li correlation positions total.\n\n", total_correlation_positions_tm);
+    wxPrintf("Searching %i positions on the Euler sphere (first-last: %i-%i)\n", last_search_position - first_search_position, first_search_position, last_search_position);
+    wxPrintf("Searching %i rotations per position.\n", number_of_rotations);
+    wxPrintf("There are %li correlation positions total.\n\n", total_correlation_positions);
 
-    psi_tm   = new float[number_of_rotations_tm];
-    theta_tm = new float[last_search_position_tm - first_search_position + 1];
-    phi_tm   = new float[last_search_position_tm - first_search_position + 1];
+    psi_tm   = new float[number_of_rotations];
+    theta_tm = new float[last_search_position - first_search_position + 1];
+    phi_tm   = new float[last_search_position - first_search_position + 1];
 
-    for ( int k = 0; k < number_of_rotations_tm; k++ ) {
-        psi_tm[k] = psi_start + psi_step_tm * k;
+    for ( int k = 0; k < number_of_rotations; k++ ) {
+        psi_tm[k] = psi_start + psi_step * k;
         //   wxPrintf("psi = %f\n", psi_tm[k]);
     }
-    for ( int k = first_search_position; k <= last_search_position_tm; k++ ) {
-        phi_tm[k]   = global_euler_search_tm.list_of_search_parameters[k][0];
-        theta_tm[k] = global_euler_search_tm.list_of_search_parameters[k][1];
+    for ( int k = first_search_position; k <= last_search_position; k++ ) {
+        phi_tm[k]   = global_euler_search.list_of_search_parameters[k][0];
+        theta_tm[k] = global_euler_search.list_of_search_parameters[k][1];
         //   wxPrintf("theta phi = %f %f\n", phi_tm[k], theta_tm[k]);
     }
+
+    output_star_file.PreallocateMemoryAndBlank(number_of_sampled_views);
+    output_star_file.parameters_to_write.SetAllToTrue( );
+    output_star_file.parameters_to_write.image_is_active         = false;
+    output_star_file.parameters_to_write.original_image_filename = false;
+    output_star_file.parameters_to_write.reference_3d_filename   = false;
+    output_star_file.parameters_to_write.stack_filename          = false;
+
+    cisTEMParameterLine parameters;
+    // set default parameter values
+    parameters.position_in_stack                  = 0;
+    parameters.image_is_active                    = 0;
+    parameters.psi                                = 0.0f;
+    parameters.theta                              = 0.0f;
+    parameters.phi                                = 0.0f;
+    parameters.x_shift                            = 0.0f;
+    parameters.y_shift                            = 0.0f;
+    parameters.defocus_1                          = defocus1;
+    parameters.defocus_2                          = defocus2;
+    parameters.defocus_angle                      = defocus_angle;
+    parameters.phase_shift                        = phase_shift;
+    parameters.occupancy                          = 100.0f;
+    parameters.logp                               = -1000.0f;
+    parameters.sigma                              = 10.0f;
+    parameters.score                              = 10.0f;
+    parameters.score_change                       = 0.0f;
+    parameters.pixel_size                         = pixel_size;
+    parameters.microscope_voltage_kv              = voltage_kV;
+    parameters.microscope_spherical_aberration_mm = spherical_aberration_mm;
+    parameters.amplitude_contrast                 = 0.0f;
+    parameters.beam_tilt_x                        = 0.0f;
+    parameters.beam_tilt_y                        = 0.0f;
+    parameters.image_shift_x                      = 0.0f;
+    parameters.image_shift_y                      = 0.0f;
+    parameters.stack_filename                     = output_pose_filename;
+    parameters.original_image_filename            = wxEmptyString;
+    parameters.reference_3d_filename              = wxEmptyString;
+    parameters.best_2d_class                      = 0;
+    parameters.beam_tilt_group                    = 0;
+    parameters.particle_group                     = 0;
+    parameters.pre_exposure                       = 0.0f;
+    parameters.total_exposure                     = 0.0f;
 
     // These vars are only needed in the GPU code, but also need to be set out here to compile.
     // update GPU setup to "inner" loop only - for tm search
     bool first_gpu_loop = true;
     int  nGPUs          = 1;
-    int  nJobs          = last_search_position_tm - first_search_position + 1;
+    int  nJobs          = last_search_position - first_search_position + 1;
     if ( use_gpu && max_threads > nJobs ) {
         wxPrintf("\n\tWarning, you request more threads (%d) than there are search positions (%d)\n", max_threads, nJobs);
         max_threads = nJobs;
     }
 
     int minPos = first_search_position;
-    int maxPos = last_search_position_tm;
+    int maxPos = last_search_position;
     int incPos = (nJobs) / (max_threads);
 
 #ifdef ENABLEGPU
@@ -325,7 +379,7 @@ bool CompareTemplateApp::DoCalculation( ) {
 #endif
 
     if ( use_gpu ) {
-        total_correlation_positions_tm_per_thread = total_correlation_positions_tm / max_threads;
+        total_correlation_positions_per_thread = total_correlation_positions / max_threads;
 
 #ifdef ENABLEGPU
         //    checkCudaErrors(cudaGetDeviceCount(&nGPUs));
@@ -336,7 +390,7 @@ bool CompareTemplateApp::DoCalculation( ) {
     }
 
     ProgressBar* my_progress;
-    my_progress = new ProgressBar(total_correlation_positions_tm_per_thread);
+    my_progress = new ProgressBar(total_correlation_positions_per_thread);
 
     // calculate whitening filter and CTF from experimental image
     whitening_filter.SetupXAxis(0.0, 0.5 * sqrtf(2.0), int((input_image.logical_x_dimension / 2.0 + 1.0) * sqrtf(2.0) + 1.0));
@@ -382,6 +436,7 @@ bool CompareTemplateApp::DoCalculation( ) {
     input_reconstruction_wrong.ZeroCentralPixel( );
     input_reconstruction_wrong.SwapRealSpaceQuadrants( );
 
+    // prepare stack of sampled views
     montage_image_stack.Allocate(input_reconstruction_particle_file.ReturnXSize( ), input_reconstruction_particle_file.ReturnXSize( ), number_of_sampled_views);
     montage_image_stack.SetToConstant(0.0f);
 
@@ -390,26 +445,38 @@ bool CompareTemplateApp::DoCalculation( ) {
     Image current_projection_image, current_projection_other, current_projection_correct_template, padded_projection_image;
     float ac_val, ac_max, cc_val, cc_max;
 
-    NumericTextFile pose_file(output_pose_filename, OPEN_TO_WRITE, 3);
-    pose_file.WriteCommentLine("Psi, Theta, Phi");
-    double temp_double_array[3];
-
     // generate particle montage
     current_projection_image.Allocate(input_reconstruction_particle_file.ReturnXSize( ), input_reconstruction_particle_file.ReturnXSize( ), 1, false);
     if ( padding != 1.0f )
         padded_projection_image.Allocate(input_reconstruction_particle_file.ReturnXSize( ) * padding, input_reconstruction_particle_file.ReturnXSize( ) * padding, false);
-    for ( int K = 0; K < number_of_sampled_views; K++ ) {
-        int k1 = rand( ) % number_of_rotations_tm;
-        int k2 = rand( ) % (last_search_position_tm - first_search_position + 1);
-        wxPrintf("k1 = %i k2 = %i\n", k1, k2);
-        temp_double_array[0] = psi_tm[k1];
-        temp_double_array[1] = theta_tm[k2];
-        temp_double_array[2] = phi_tm[k2];
-        pose_file.WriteLine(temp_double_array);
-        wxPrintf("sampling view @ %f %f %f\n", phi_tm[k2], theta_tm[k2], psi_tm[k1]);
 
-        angles_sampled_view.Init(phi_tm[k2], theta_tm[k2], psi_tm[k1], 0.0, 0.0);
+    // sample views
+
+    float* sampled_psi;
+    float* sampled_theta;
+    float* sampled_phi;
+    sampled_psi   = new float[number_of_sampled_views];
+    sampled_theta = new float[number_of_sampled_views];
+    sampled_phi   = new float[number_of_sampled_views];
+    for ( int iView = 0; iView < number_of_sampled_views; iView++ ) {
+        if ( use_existing_params ) {
+            sampled_psi[iView]   = input_star_file.ReturnPsi(iView);
+            sampled_theta[iView] = input_star_file.ReturnTheta(iView);
+            sampled_phi[iView]   = input_star_file.ReturnPhi(iView);
+            wxPrintf("psi theta phi = %f %f %f \n", sampled_psi[iView], sampled_theta[iView], sampled_phi[iView]);
+        }
+        else {
+            int k1               = rand( ) % number_of_rotations;
+            int k2               = rand( ) % (last_search_position - first_search_position + 1);
+            sampled_psi[iView]   = psi_tm[k1];
+            sampled_theta[iView] = theta_tm[k2];
+            sampled_phi[iView]   = phi_tm[k1];
+            wxPrintf("k1 = %i k2=%i\n", k1, k2);
+            wxPrintf("psi theta phi = %f %f %f \n", sampled_psi[iView], sampled_theta[iView], sampled_phi[iView]);
+        }
+
         // generate particle from sampled view (in TM we applied projection filter first then normalized the templates)
+        angles_sampled_view.Init(sampled_phi[iView], sampled_theta[iView], sampled_psi[iView], 0.0, 0.0);
         if ( padding != 1.0f ) {
             input_reconstruction_particle.ExtractSlice(padded_projection_image, angles_sampled_view, 1.0f, false);
             padded_projection_image.SwapRealSpaceQuadrants( );
@@ -424,38 +491,46 @@ bool CompareTemplateApp::DoCalculation( ) {
         current_projection_image.MultiplyPixelWise(projection_filter);
 
         current_projection_image.BackwardFFT( );
+        if ( n_Frames_for_simulating_shot_noise == 0 )
+            montage_image_stack.InsertOtherImageAtSpecifiedSlice(&current_projection_image, iView);
+        else {
+            float min_value, max_value;
+            current_projection_image.GetMinMax(min_value, max_value);
+            // simulate shot noise //can we determing the nFrames based on SNR from simulator
+            Image output_image;
+            output_image.Allocate(current_projection_image.logical_x_dimension, current_projection_image.logical_y_dimension, 1);
+            output_image.SetToConstant(0.0f);
 
-        float min_value, max_value;
-        current_projection_image.GetMinMax(min_value, max_value);
-
-        int   nFrames = 1; // can we determing the nFrames based on SNR from simulator
-        Image output_image;
-        output_image.Allocate(current_projection_image.logical_x_dimension, current_projection_image.logical_y_dimension, 1);
-        output_image.SetToConstant(0.0f);
-
-        Image temp_image;
-        temp_image.Allocate(current_projection_image.logical_x_dimension, current_projection_image.logical_y_dimension, 1);
-        current_projection_image.AddConstant(-min_value);
-        current_projection_image.DivideByConstant(max_value - min_value); //perform min-max scaling
-        for ( int iFrame = 0; iFrame < nFrames; iFrame++ ) {
-            temp_image.SetToConstant(0.0f);
-            RandomNumberGenerator my_rand(PIf);
-            for ( long iPixel = 0; iPixel < current_projection_image.real_memory_allocated; iPixel++ ) {
-                temp_image.real_values[iPixel] = my_rand.GetNormalRandomSTD(current_projection_image.real_values[iPixel], sqrtf(current_projection_image.real_values[iPixel])); //distribution(gen);
+            Image temp_image;
+            temp_image.Allocate(current_projection_image.logical_x_dimension, current_projection_image.logical_y_dimension, 1);
+            current_projection_image.AddConstant(-min_value);
+            current_projection_image.DivideByConstant(max_value - min_value); //perform min-max scaling
+            for ( int iFrame = 0; iFrame < n_Frames_for_simulating_shot_noise; iFrame++ ) {
+                temp_image.SetToConstant(0.0f);
+                RandomNumberGenerator my_rand(PIf);
+                for ( long iPixel = 0; iPixel < current_projection_image.real_memory_allocated; iPixel++ ) {
+                    temp_image.real_values[iPixel] = my_rand.GetNormalRandomSTD(current_projection_image.real_values[iPixel], sqrtf(current_projection_image.real_values[iPixel])); //distribution(gen);
+                }
+                output_image.AddImage(&temp_image);
             }
-            output_image.AddImage(&temp_image);
+            output_image.ForwardFFT( );
+
+            output_image.ZeroCentralPixel( ); // equivalent to subtracting mean in real space
+            output_image.DivideByConstant(sqrtf(output_image.ReturnSumOfSquares( ))); //todo: is scaling necessary
+            output_image.BackwardFFT( );
+
+            montage_image_stack.InsertOtherImageAtSpecifiedSlice(&output_image, iView);
         }
-        output_image.ForwardFFT( );
 
-        output_image.ZeroCentralPixel( ); // equivalent to subtracting mean in real space
-        output_image.DivideByConstant(sqrtf(output_image.ReturnSumOfSquares( ))); //todo: is scaling necessary
-        output_image.BackwardFFT( );
-
-        montage_image_stack.InsertOtherImageAtSpecifiedSlice(&output_image, K);
+        // update parameters
+        parameters.position_in_stack = iView + 1;
+        parameters.psi               = sampled_psi[iView];
+        parameters.theta             = sampled_theta[iView];
+        parameters.phi               = sampled_phi[iView];
+        output_star_file.all_parameters.Add(parameters);
     }
-    pose_file.Close( );
-
-    montage_image_stack.QuickAndDirtyWriteSlices(wxString::Format("%s/montage_stack_%.1f_%.1f_%i_%i.mrc", data_directory_name, psi_step_tm, angular_step_tm, number_of_sampled_views, result_number).ToStdString( ), 1, number_of_sampled_views);
+    output_star_file.WriteTocisTEMStarFile(output_pose_filename.ToStdString( ));
+    montage_image_stack.QuickAndDirtyWriteSlices(wxString::Format("%s/montage_stack_%.1f_%.1f_%i_%i.mrc", data_directory_name, psi_step, angular_step, number_of_sampled_views, result_number).ToStdString( ), 1, number_of_sampled_views);
     // convert stack to montage
     int montage_dim_x = montage_image_stack.logical_x_dimension * int(sqrt(number_of_sampled_views)); //(last_search_position_sampled_view - first_search_position + 1);
     int montage_dim_y = montage_image_stack.logical_y_dimension * int(sqrt(number_of_sampled_views)); //number_of_rotations_sampled_view;
@@ -513,7 +588,7 @@ bool CompareTemplateApp::DoCalculation( ) {
 
     int       image_counter = 0;
     ImageFile montage_stack_file;
-    montage_stack_file.OpenFile(wxString::Format("%s/montage_stack_%.1f_%.1f_%i_%i.mrc", data_directory_name, psi_step_tm, angular_step_tm, number_of_sampled_views, result_number).ToStdString( ), false);
+    montage_stack_file.OpenFile(wxString::Format("%s/montage_stack_%.1f_%.1f_%i_%i.mrc", data_directory_name, psi_step, angular_step, number_of_sampled_views, result_number).ToStdString( ), false);
     for ( image_counter_y = 0; image_counter_y < int(sqrt(number_of_sampled_views)); image_counter_y++ ) {
         j_start_output = image_counter_y * montage_image_stack.logical_y_dimension;
 
@@ -558,7 +633,7 @@ bool CompareTemplateApp::DoCalculation( ) {
             }
         }
     }
-    montage_image.QuickAndDirtyWriteSlice(wxString::Format("%s/montage_%.1f_%.1f_%i_%i.mrc", data_directory_name, psi_step_tm, angular_step_tm, number_of_sampled_views, result_number).ToStdString( ), 1);
+    montage_image.QuickAndDirtyWriteSlice(wxString::Format("%s/montage_%.1f_%.1f_%i_%i.mrc", data_directory_name, psi_step, angular_step, number_of_sampled_views, result_number).ToStdString( ), 1);
 
     // normalize stitched image
 
@@ -642,7 +717,7 @@ bool CompareTemplateApp::DoCalculation( ) {
                 if ( tIDX == (max_threads - 1) )
                     t_last_search_position = maxPos;
 
-                GPU[tIDX].Init(this, input_reconstruction_correct, input_reconstruction_wrong, montage_image, current_projection_correct_template, current_projection_other, psi_max, psi_start, psi_step_tm, angles_tm, global_euler_search_tm, t_first_search_position, t_last_search_position, my_progress, number_of_rotations_tm, total_correlation_positions_tm, total_correlation_positions_tm_per_thread, data_directory_name);
+                GPU[tIDX].Init(this, input_reconstruction_correct, input_reconstruction_wrong, montage_image, current_projection_correct_template, current_projection_other, psi_max, psi_start, psi_step, angles_tm, global_euler_search, t_first_search_position, t_last_search_position, my_progress, number_of_rotations, total_correlation_positions, total_correlation_positions_per_thread, data_directory_name);
 
                 wxPrintf("%d\n", tIDX);
                 wxPrintf("%d\n", t_first_search_position);
@@ -666,11 +741,10 @@ bool CompareTemplateApp::DoCalculation( ) {
             int tIDX = ReturnThreadNumberOfCurrentThread( );
             gpuDev.SetGpu(tIDX);
 
-            GPU[tIDX].RunInnerLoop(projection_filter, tIDX, current_correlation_position_sampled_view);
+            GPU[tIDX].RunInnerLoop(projection_filter, tIDX, current_correlation_position); // current_correlation_position_sampled_view?
 
 #pragma omp critical
             {
-
                 Image mip_buffer_ac, mip_buffer_cc; // FIXME is there better way to allocate memory for d_cc and d_sum? all views or partial views?
                 mip_buffer_ac.CopyFrom(&max_intensity_projection_ac);
                 mip_buffer_cc.CopyFrom(&max_intensity_projection_ac);
@@ -772,10 +846,10 @@ bool CompareTemplateApp::DoCalculation( ) {
     }
 
     for ( pixel_counter = 0; pixel_counter < montage_image.real_memory_allocated; pixel_counter++ ) {
-        correlation_pixel_sum_ac[pixel_counter] /= float(total_correlation_positions_tm);
-        correlation_pixel_sum_of_squares_ac[pixel_counter] = correlation_pixel_sum_of_squares_ac[pixel_counter] / float(total_correlation_positions_tm) - powf(correlation_pixel_sum_ac[pixel_counter], 2);
-        correlation_pixel_sum_cc[pixel_counter] /= float(total_correlation_positions_tm);
-        correlation_pixel_sum_of_squares_cc[pixel_counter] = correlation_pixel_sum_of_squares_cc[pixel_counter] / float(total_correlation_positions_tm) - powf(correlation_pixel_sum_cc[pixel_counter], 2);
+        correlation_pixel_sum_ac[pixel_counter] /= float(total_correlation_positions);
+        correlation_pixel_sum_of_squares_ac[pixel_counter] = correlation_pixel_sum_of_squares_ac[pixel_counter] / float(total_correlation_positions) - powf(correlation_pixel_sum_ac[pixel_counter], 2);
+        correlation_pixel_sum_cc[pixel_counter] /= float(total_correlation_positions);
+        correlation_pixel_sum_of_squares_cc[pixel_counter] = correlation_pixel_sum_of_squares_cc[pixel_counter] / float(total_correlation_positions) - powf(correlation_pixel_sum_cc[pixel_counter], 2);
 
         if ( correlation_pixel_sum_of_squares_ac[pixel_counter] > 0.0f ) {
             correlation_pixel_sum_of_squares_ac[pixel_counter] = sqrtf(correlation_pixel_sum_of_squares_ac[pixel_counter]) * (float)sqrt_input_pixels;
