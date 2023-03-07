@@ -40,7 +40,8 @@ void CompareTemplate2DApp::DoInteractiveUserInput( ) {
     bool     use_gpu_input           = false;
     int      number_of_sampled_views = 30;
     int      result_number;
-    bool     use_existing_params = false;
+    bool     use_existing_params  = false;
+    bool     use_existing_defocus = false;
     wxString preexisting_particle_file_name;
 
     UserInput* my_input = new UserInput("CompareTemplate2D", 1.00);
@@ -70,6 +71,7 @@ void CompareTemplate2DApp::DoInteractiveUserInput( ) {
         number_of_sampled_views = my_input->GetIntFromUser("Number of sampled views", "number of sampled views", "1", 1, 10000);
     else {
         preexisting_particle_file_name = my_input->GetFilenameFromUser("cisTEM star file name", "an input star file to match reconstruction", "myparams.star", true);
+        use_existing_defocus           = my_input->GetYesNoFromUser("Use defocus from input star file", "yes no", "no");
     }
     result_number = my_input->GetIntFromUser("Result number", "result number", "1", 1, 400);
 
@@ -78,7 +80,7 @@ void CompareTemplate2DApp::DoInteractiveUserInput( ) {
 
     delete my_input;
 
-    my_current_job.ManualSetArguments("tttttffffffffifftiffiibiti",
+    my_current_job.ManualSetArguments("tttttffffffffifftiffiibbiti",
                                       input_search_images.ToUTF8( ).data( ),
                                       input_reconstruction_particle_filename.ToUTF8( ).data( ),
                                       input_reconstruction_correct_filename.ToUTF8( ).data( ),
@@ -102,6 +104,7 @@ void CompareTemplate2DApp::DoInteractiveUserInput( ) {
                                       last_search_position,
                                       max_threads,
                                       use_existing_params,
+                                      use_existing_defocus,
                                       number_of_sampled_views,
                                       preexisting_particle_file_name.ToUTF8( ).data( ),
                                       result_number);
@@ -134,9 +137,10 @@ bool CompareTemplate2DApp::DoCalculation( ) {
     // wxString log_output_file                        = my_current_job.arguments[24].ReturnStringArgument( );
     int      max_threads                    = my_current_job.arguments[21].ReturnIntegerArgument( );
     bool     use_existing_params            = my_current_job.arguments[22].ReturnBoolArgument( );
-    int      number_of_sampled_views        = my_current_job.arguments[23].ReturnIntegerArgument( );
-    wxString preexisting_particle_file_name = my_current_job.arguments[24].ReturnStringArgument( );
-    int      result_number                  = my_current_job.arguments[25].ReturnIntegerArgument( );
+    bool     use_existing_defocus           = my_current_job.arguments[23].ReturnBoolArgument( );
+    int      number_of_sampled_views        = my_current_job.arguments[24].ReturnIntegerArgument( );
+    wxString preexisting_particle_file_name = my_current_job.arguments[25].ReturnStringArgument( );
+    int      result_number                  = my_current_job.arguments[26].ReturnIntegerArgument( );
 
     int  number_of_rotations = 0;
     long total_correlation_positions;
@@ -303,9 +307,11 @@ bool CompareTemplate2DApp::DoCalculation( ) {
     Image projection_filter;
     projection_filter.Allocate(input_reconstruction_particle_file.ReturnXSize( ), input_reconstruction_particle_file.ReturnXSize( ), false);
     input_ctf.Init(voltage_kV, spherical_aberration_mm, amplitude_contrast, defocus1, defocus2, defocus_angle, 0.0, 0.0, 0.0, pixel_size, deg_2_rad(phase_shift));
-    input_ctf.SetDefocus(defocus1 / pixel_size, defocus2 / pixel_size, deg_2_rad(defocus_angle));
-    projection_filter.CalculateCTFImage(input_ctf);
-    projection_filter.ApplyCurveFilter(&whitening_filter);
+    if ( ! use_existing_params || (use_existing_params && ! use_existing_defocus) ) {
+        input_ctf.SetDefocus(defocus1 / pixel_size, defocus2 / pixel_size, deg_2_rad(defocus_angle));
+        projection_filter.CalculateCTFImage(input_ctf);
+        projection_filter.ApplyCurveFilter(&whitening_filter);
+    }
 
     // pad 3d volumes
     if ( padding != 1.0f ) {
@@ -354,15 +360,25 @@ bool CompareTemplate2DApp::DoCalculation( ) {
     float* sampled_psi;
     float* sampled_theta;
     float* sampled_phi;
+
     sampled_psi   = new float[number_of_sampled_views];
     sampled_theta = new float[number_of_sampled_views];
     sampled_phi   = new float[number_of_sampled_views];
+
     for ( int iView = 0; iView < number_of_sampled_views; iView++ ) {
         if ( use_existing_params ) {
             sampled_psi[iView]   = input_star_file.ReturnPsi(iView);
             sampled_theta[iView] = input_star_file.ReturnTheta(iView);
             sampled_phi[iView]   = input_star_file.ReturnPhi(iView);
-            wxPrintf("psi theta phi = %f %f %f \n", sampled_psi[iView], sampled_theta[iView], sampled_phi[iView]);
+            if ( use_existing_defocus ) {
+                defocus1      = input_star_file.ReturnDefocus1(iView);
+                defocus2      = input_star_file.ReturnDefocus2(iView);
+                defocus_angle = input_star_file.ReturnDefocusAngle(iView);
+                input_ctf.SetDefocus(defocus1 / pixel_size, defocus2 / pixel_size, deg_2_rad(defocus_angle));
+                projection_filter.CalculateCTFImage(input_ctf);
+                projection_filter.ApplyCurveFilter(&whitening_filter);
+            }
+            wxPrintf("psi theta phi defocus1 defocus2 defocus_angle= %f %f %f %f %f %f\n", sampled_psi[iView], sampled_theta[iView], sampled_phi[iView], defocus1, defocus2, defocus_angle);
         }
         else {
             int k1               = rand( ) % number_of_rotations;
@@ -371,7 +387,7 @@ bool CompareTemplate2DApp::DoCalculation( ) {
             sampled_theta[iView] = theta_tm[k2];
             sampled_phi[iView]   = phi_tm[k1];
             wxPrintf("k1 = %i k2=%i\n", k1, k2);
-            wxPrintf("psi theta phi = %f %f %f \n", sampled_psi[iView], sampled_theta[iView], sampled_phi[iView]);
+            wxPrintf("psi theta phi defocus1 defocus2 defocus_angle= %f %f %f %f %f %f\n", sampled_psi[iView], sampled_theta[iView], sampled_phi[iView], defocus1, defocus2, defocus_angle);
         }
 
         angles.Init(sampled_phi[iView], sampled_theta[iView], sampled_psi[iView], 0.0, 0.0);
