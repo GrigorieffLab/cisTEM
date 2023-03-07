@@ -179,8 +179,8 @@ void RecalculatePeakApp::DoInteractiveUserInput( ) {
     float fixed_phi    = my_input->GetFloatFromUser("Constrained search Phi", "max phi for constrained search", "360.0", -360.0, 360.0);
     float fixed_theta  = my_input->GetFloatFromUser("Constrained search Theta", "max theta for constrained search", "360.0", -360.0, 360.0);
     float fixed_psi    = my_input->GetFloatFromUser("Constrained search Psi", "max psi for constrained search", "360.0", -360.0, 360.0);
-    float coord_x      = my_input->GetFloatFromUser("Constrained search x", "coord x", "0.0", 0, 5120);
-    float coord_y      = my_input->GetFloatFromUser("Constrained search y", "coord y", "0.0", 0, 5120);
+    float coord_x      = my_input->GetFloatFromUser("Constrained search x", "coord x", "0.0", 0, 6000);
+    float coord_y      = my_input->GetFloatFromUser("Constrained search y", "coord y", "0.0", 0, 6000);
     float d_pixel_size = my_input->GetFloatFromUser("change in pixel size", "d pixel size", "0.0", 0.0, 1.0);
     float d_defocus    = my_input->GetFloatFromUser("change in defocus", "d defocus", "0.0", -1200.0, 1200.0);
 
