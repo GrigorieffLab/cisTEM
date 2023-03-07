@@ -226,6 +226,12 @@ void MatchTemplateApp::DoInteractiveUserInput( ) {
         constrained_search_psi_max   = my_input->GetFloatFromUser("Constrained search Psi max", "max psi for constrained search", "360.0", 0.0, 360.0);
         constrained_search_psi_min   = my_input->GetFloatFromUser("Constrained search Psi min", "max psi for constrained search", "0.0.0", 0.0, 360.0);
     }
+
+    float    fixed_phi   = my_input->GetFloatFromUser("Constrained search Phi", "max phi for constrained search", "360.0", 0.0, 360.0);
+    float    fixed_theta = my_input->GetFloatFromUser("Constrained search Theta", "max theta for constrained search", "360.0", 0.0, 360.0);
+    float    fixed_psi   = my_input->GetFloatFromUser("Constrained search Psi", "max psi for constrained search", "360.0", 0.0, 360.0);
+    wxString output_name = my_input->GetFilenameFromUser("output dataname", "The input image stack, containing the images that should be searched", "image_stack.mrc", false);
+
     int   first_search_position           = -1;
     int   last_search_position            = -1;
     int   image_number_for_gui            = 0;
@@ -237,7 +243,7 @@ void MatchTemplateApp::DoInteractiveUserInput( ) {
 
     delete my_input;
 
-    my_current_job.ManualSetArguments("ttffffffffffifffffbfftttttttttftiiiitttfbibffffff", input_search_images.ToUTF8( ).data( ),
+    my_current_job.ManualSetArguments("ttffffffffffifffffbfftttttttttftiiiitttfbibffffffffft", input_search_images.ToUTF8( ).data( ),
                                       input_reconstruction.ToUTF8( ).data( ),
                                       pixel_size,
                                       voltage_kV,
@@ -285,7 +291,11 @@ void MatchTemplateApp::DoInteractiveUserInput( ) {
                                       constrained_search_theta_max,
                                       constrained_search_theta_min,
                                       constrained_search_psi_max,
-                                      constrained_search_psi_min);
+                                      constrained_search_psi_min,
+                                      fixed_phi,
+                                      fixed_theta,
+                                      fixed_psi,
+                                      output_name.ToUTF8( ).data( ));
 }
 
 // override the do calculation method which will be what is actually run..
@@ -402,6 +412,10 @@ bool MatchTemplateApp::DoCalculation( ) {
     float    constrained_search_theta_min    = my_current_job.arguments[46].ReturnFloatArgument( );
     float    constrained_search_psi_max      = my_current_job.arguments[47].ReturnFloatArgument( );
     float    constrained_search_psi_min      = my_current_job.arguments[48].ReturnFloatArgument( );
+    float    fixed_phi                       = my_current_job.arguments[49].ReturnFloatArgument( );
+    float    fixed_theta                     = my_current_job.arguments[50].ReturnFloatArgument( );
+    float    fixed_psi                       = my_current_job.arguments[51].ReturnFloatArgument( );
+    wxString output_name                     = my_current_job.arguments[52].ReturnStringArgument( );
 
     if ( is_running_locally == false )
         max_threads = number_of_threads_requested_on_command_line; // OVERRIDE FOR THE GUI, AS IT HAS TO BE SET ON THE COMMAND LINE...
@@ -716,7 +730,7 @@ bool MatchTemplateApp::DoCalculation( ) {
 
     //whitening_filter.WriteToFile("/tmp/filter.txt");
     input_image.ApplyCurveFilter(&whitening_filter);
-    input_image.ZeroCentralPixel( ); // redundant?
+    input_image.ZeroCentralPixel( ); 
     input_image.DivideByConstant(sqrtf(input_image.ReturnSumOfSquares( )));
     //input_image.QuickAndDirtyWriteSlice("/tmp/white.mrc", 1);
     //exit(-1);
@@ -965,8 +979,9 @@ bool MatchTemplateApp::DoCalculation( ) {
                 //current_rotation = 0;
                 for ( current_psi = psi_start; current_psi <= psi_max; current_psi += psi_step ) {
 
-                    angles.Init(global_euler_search.list_of_search_parameters[current_search_position][0], global_euler_search.list_of_search_parameters[current_search_position][1], current_psi, 0.0, 0.0);
-                    //                    angles.Init(130.0, 30.0, 199.5, 0.0, 0.0);
+                    //angles.Init(global_euler_search.list_of_search_parameters[current_search_position][0], global_euler_search.list_of_search_parameters[current_search_position][1], current_psi, 0.0, 0.0);
+                    // angles.Init(-50.13, 107.83, 188.6, 0.0, 0.0);
+                    angles.Init(fixed_phi, fixed_theta, fixed_psi, 0.0, 0.0);
 
                     if ( padding != 1.0f ) {
                         template_reconstruction.ExtractSlice(padded_projection, angles, 1.0f, false);
@@ -1044,8 +1059,12 @@ bool MatchTemplateApp::DoCalculation( ) {
 #endif
 
                     padded_reference.BackwardFFT( );
-                    //                    padded_reference.QuickAndDirtyWriteSlice("cc.mrc", 1);
-                    //                    exit(0);
+                    if ( is_rotated_by_90 )
+                        padded_reference.RotateInPlaceAboutZBy90Degrees(false);
+                    padded_reference.MultiplyByConstant((float)sqrt_input_pixels);
+                    padded_reference.Resize(original_input_image_x, original_input_image_y, 1, padded_reference.ReturnAverageOfRealValuesOnEdges( ));
+                    padded_reference.QuickAndDirtyWriteSlice(output_name.ToStdString( ), 1);
+                    exit(0);
 
                     //                    for (pixel_counter = 0; pixel_counter <  padded_reference.real_memory_allocated; pixel_counter++)
                     //                    {
