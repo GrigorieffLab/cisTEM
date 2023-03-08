@@ -40,9 +40,11 @@ void CompareTemplate2DApp::DoInteractiveUserInput( ) {
     bool     use_gpu_input           = false;
     int      number_of_sampled_views = 30;
     int      result_number;
-    bool     use_existing_params  = false;
-    bool     use_existing_defocus = false;
+    bool     use_existing_params           = false;
+    bool     use_existing_defocus          = false;
+    bool     use_indep_refined_coordinates = false;
     wxString preexisting_particle_file_name;
+    wxString preexisting_particle_file_name_indep;
 
     UserInput* my_input = new UserInput("CompareTemplate2D", 1.00);
 
@@ -65,13 +67,18 @@ void CompareTemplate2DApp::DoInteractiveUserInput( ) {
     angular_step                           = my_input->GetFloatFromUser("TM out of plane angular step (0.0 = set automatically)", "Angular step size for global grid search", "0.0", 0.0);
     in_plane_angular_step                  = my_input->GetFloatFromUser("TM in plane angular step (0.0 = set automatically)", "Angular step size for in-plane rotations during the search", "0.0", 0.0);
     //log_output_file                        = my_input->GetFilenameFromUser("Log file for recording meta data", "Log output file", "log.txt", false);
-    max_threads         = my_input->GetIntFromUser("Max. threads to use for calculation", "when threading, what is the max threads to run", "1", 1);
-    use_existing_params = my_input->GetYesNoFromUser("Use an existing set of orientations", "yes no", "no");
+    max_threads                   = my_input->GetIntFromUser("Max. threads to use for calculation", "when threading, what is the max threads to run", "1", 1);
+    use_existing_params           = my_input->GetYesNoFromUser("Use an existing set of orientations", "yes no", "no");
+    use_indep_refined_coordinates = my_input->GetYesNoFromUser("Use an existing set of orientations of another template", "yes no", "no");
     if ( ! use_existing_params )
         number_of_sampled_views = my_input->GetIntFromUser("Number of sampled views", "number of sampled views", "1", 1, 10000);
     else {
         preexisting_particle_file_name = my_input->GetFilenameFromUser("cisTEM star file name", "an input star file to match reconstruction", "myparams.star", true);
         use_existing_defocus           = my_input->GetYesNoFromUser("Use defocus from input star file", "yes no", "no");
+        if ( use_indep_refined_coordinates ) {
+            preexisting_particle_file_name_indep = my_input->GetFilenameFromUser("cisTEM star file name for independent refinement", "an input star file to match reconstruction", "myparams.star", true);
+            use_existing_defocus                 = true;
+        }
     }
     result_number = my_input->GetIntFromUser("Result number", "result number", "1", 1, 400);
 
@@ -80,7 +87,7 @@ void CompareTemplate2DApp::DoInteractiveUserInput( ) {
 
     delete my_input;
 
-    my_current_job.ManualSetArguments("tttttffffffffifftiffiibbiti",
+    my_current_job.ManualSetArguments("tttttffffffffifftiffiibbbitti",
                                       input_search_images.ToUTF8( ).data( ),
                                       input_reconstruction_particle_filename.ToUTF8( ).data( ),
                                       input_reconstruction_correct_filename.ToUTF8( ).data( ),
@@ -105,8 +112,10 @@ void CompareTemplate2DApp::DoInteractiveUserInput( ) {
                                       max_threads,
                                       use_existing_params,
                                       use_existing_defocus,
+                                      use_indep_refined_coordinates,
                                       number_of_sampled_views,
                                       preexisting_particle_file_name.ToUTF8( ).data( ),
+                                      preexisting_particle_file_name_indep.ToUTF8( ).data( ),
                                       result_number);
 }
 
@@ -135,12 +144,14 @@ bool CompareTemplate2DApp::DoCalculation( ) {
     float    in_plane_angular_step                  = my_current_job.arguments[19].ReturnFloatArgument( );
     int      last_search_position                   = my_current_job.arguments[20].ReturnIntegerArgument( );
     // wxString log_output_file                        = my_current_job.arguments[24].ReturnStringArgument( );
-    int      max_threads                    = my_current_job.arguments[21].ReturnIntegerArgument( );
-    bool     use_existing_params            = my_current_job.arguments[22].ReturnBoolArgument( );
-    bool     use_existing_defocus           = my_current_job.arguments[23].ReturnBoolArgument( );
-    int      number_of_sampled_views        = my_current_job.arguments[24].ReturnIntegerArgument( );
-    wxString preexisting_particle_file_name = my_current_job.arguments[25].ReturnStringArgument( );
-    int      result_number                  = my_current_job.arguments[26].ReturnIntegerArgument( );
+    int      max_threads                          = my_current_job.arguments[21].ReturnIntegerArgument( );
+    bool     use_existing_params                  = my_current_job.arguments[22].ReturnBoolArgument( );
+    bool     use_existing_defocus                 = my_current_job.arguments[23].ReturnBoolArgument( );
+    bool     use_indep_refined_coordinates        = my_current_job.arguments[24].ReturnBoolArgument( );
+    int      number_of_sampled_views              = my_current_job.arguments[25].ReturnIntegerArgument( );
+    wxString preexisting_particle_file_name       = my_current_job.arguments[26].ReturnStringArgument( );
+    wxString preexisting_particle_file_name_indep = my_current_job.arguments[27].ReturnStringArgument( );
+    int      result_number                        = my_current_job.arguments[28].ReturnIntegerArgument( );
 
     int  number_of_rotations = 0;
     long total_correlation_positions;
@@ -169,6 +180,7 @@ bool CompareTemplate2DApp::DoCalculation( ) {
     Image           montage_image, montage_image_stack;
     EulerSearch     global_euler_search;
     AnglesAndShifts angles;
+    AnglesAndShifts angles_indep;
 
     input_search_image_file.OpenFile(input_search_images_filename.ToStdString( ), false);
     input_image.ReadSlice(&input_search_image_file, 1);
@@ -183,6 +195,7 @@ bool CompareTemplate2DApp::DoCalculation( ) {
 
     // TODO 1. normalize (done) 2. pad image with mean and pad template with 0 to same size 3. pad template to remove aliasing (done)
     cisTEMParameters input_star_file;
+    cisTEMParameters input_star_file_indep;
     long             number_preexisting_particles;
     float*           psi_tm;
     float*           theta_tm;
@@ -197,6 +210,14 @@ bool CompareTemplate2DApp::DoCalculation( ) {
             SendErrorAndCrash(wxString::Format("Error: Input star file %s not found\n", preexisting_particle_file_name));
         }
         number_of_sampled_views = number_preexisting_particles;
+        if ( use_indep_refined_coordinates ) {
+            if ( DoesFileExist(preexisting_particle_file_name_indep) ) {
+                input_star_file_indep.ReadFromcisTEMStarFile(preexisting_particle_file_name_indep);
+            }
+            else {
+                SendErrorAndCrash(wxString::Format("Error: Input star file %s not found\n", preexisting_particle_file_name_indep));
+            }
+        }
     }
     else {
         global_euler_search.InitGrid(my_symmetry, angular_step, 0.0f, 0.0f, psi_max, psi_step, psi_start, pixel_size / high_resolution_limit_search, parameter_map, best_parameters_to_keep);
@@ -306,8 +327,13 @@ bool CompareTemplate2DApp::DoCalculation( ) {
     CTF   input_ctf;
     Image projection_filter;
     projection_filter.Allocate(input_reconstruction_particle_file.ReturnXSize( ), input_reconstruction_particle_file.ReturnXSize( ), false);
-    input_ctf.Init(voltage_kV, spherical_aberration_mm, amplitude_contrast, defocus1, defocus2, defocus_angle, 0.0, 0.0, 0.0, pixel_size, deg_2_rad(phase_shift));
+
+    CTF   input_ctf_indep;
+    Image projection_filter_indep;
+    projection_filter_indep.Allocate(input_reconstruction_particle_file.ReturnXSize( ), input_reconstruction_particle_file.ReturnXSize( ), false);
+
     if ( ! use_existing_params || (use_existing_params && ! use_existing_defocus) ) {
+        input_ctf.Init(voltage_kV, spherical_aberration_mm, amplitude_contrast, defocus1, defocus2, defocus_angle, 0.0, 0.0, 0.0, pixel_size, deg_2_rad(phase_shift));
         input_ctf.SetDefocus(defocus1 / pixel_size, defocus2 / pixel_size, deg_2_rad(defocus_angle));
         projection_filter.CalculateCTFImage(input_ctf);
         projection_filter.ApplyCurveFilter(&whitening_filter);
@@ -365,6 +391,14 @@ bool CompareTemplate2DApp::DoCalculation( ) {
     sampled_theta = new float[number_of_sampled_views];
     sampled_phi   = new float[number_of_sampled_views];
 
+    // even though not necessarily used, still need to declare?
+    float* sampled_psi_indep;
+    float* sampled_theta_indep;
+    float* sampled_phi_indep;
+    sampled_psi_indep   = new float[number_of_sampled_views];
+    sampled_theta_indep = new float[number_of_sampled_views];
+    sampled_phi_indep   = new float[number_of_sampled_views];
+
     for ( int iView = 0; iView < number_of_sampled_views; iView++ ) {
         if ( use_existing_params ) {
             sampled_psi[iView]   = input_star_file.ReturnPsi(iView);
@@ -374,11 +408,22 @@ bool CompareTemplate2DApp::DoCalculation( ) {
                 defocus1      = input_star_file.ReturnDefocus1(iView);
                 defocus2      = input_star_file.ReturnDefocus2(iView);
                 defocus_angle = input_star_file.ReturnDefocusAngle(iView);
+                input_ctf.Init(voltage_kV, spherical_aberration_mm, amplitude_contrast, defocus1, defocus2, defocus_angle, 0.0, 0.0, 0.0, pixel_size, deg_2_rad(phase_shift));
                 input_ctf.SetDefocus(defocus1 / pixel_size, defocus2 / pixel_size, deg_2_rad(defocus_angle));
                 projection_filter.CalculateCTFImage(input_ctf);
                 projection_filter.ApplyCurveFilter(&whitening_filter);
             }
             wxPrintf("psi theta phi defocus1 defocus2 defocus_angle= %f %f %f %f %f %f\n", sampled_psi[iView], sampled_theta[iView], sampled_phi[iView], defocus1, defocus2, defocus_angle);
+            if ( use_indep_refined_coordinates ) {
+                sampled_psi_indep[iView]   = input_star_file_indep.ReturnPsi(iView);
+                sampled_theta_indep[iView] = input_star_file_indep.ReturnTheta(iView);
+                sampled_phi_indep[iView]   = input_star_file_indep.ReturnPhi(iView);
+                input_ctf_indep.Init(voltage_kV, spherical_aberration_mm, amplitude_contrast, input_star_file_indep.ReturnDefocus1(iView), input_star_file_indep.ReturnDefocus2(iView), input_star_file_indep.ReturnDefocusAngle(iView), 0.0, 0.0, 0.0, pixel_size, deg_2_rad(phase_shift));
+                input_ctf_indep.SetDefocus(input_star_file_indep.ReturnDefocus1(iView) / pixel_size, input_star_file_indep.ReturnDefocus2(iView) / pixel_size, deg_2_rad(input_star_file_indep.ReturnDefocusAngle(iView)));
+                projection_filter_indep.CalculateCTFImage(input_ctf_indep);
+                projection_filter_indep.ApplyCurveFilter(&whitening_filter);
+                wxPrintf("psi theta phi defocus1 defocus2 defocus_angle= %f %f %f %f %f %f\n", sampled_psi[iView], sampled_theta[iView], sampled_phi[iView], defocus1, defocus2, defocus_angle, input_star_file_indep.ReturnDefocus1(iView), input_star_file_indep.ReturnDefocus2(iView), input_star_file_indep.ReturnDefocusAngle(iView));
+            }
         }
         else {
             int k1               = rand( ) % number_of_rotations;
@@ -391,7 +436,9 @@ bool CompareTemplate2DApp::DoCalculation( ) {
         }
 
         angles.Init(sampled_phi[iView], sampled_theta[iView], sampled_psi[iView], 0.0, 0.0);
-        //angles.Init(144.000000, 60.000000, 180.000000, 0, 0);
+        if ( use_indep_refined_coordinates )
+            angles_indep.Init(sampled_phi_indep[iView], sampled_theta_indep[iView], sampled_psi_indep[iView], 0.0, 0.0);
+
         // generate particle from sampled view (in TM we applied projection filter first then normalized the templates)
         if ( padding != 1.0f ) {
             input_reconstruction_particle.ExtractSlice(padded_projection_image, angles, 1.0f, false);
@@ -409,13 +456,19 @@ bool CompareTemplate2DApp::DoCalculation( ) {
         current_projection_image.DivideByConstant(sqrtf(current_projection_image.ReturnSumOfSquares( )));
 
         input_reconstruction_correct.ExtractSlice(current_projection_correct_template, angles, 1.0f, false);
-        input_reconstruction_wrong.ExtractSlice(current_projection_other, angles, 1.0f, false);
+        if ( use_indep_refined_coordinates )
+            input_reconstruction_wrong.ExtractSlice(current_projection_other, angles_indep, 1.0f, false);
+        else
+            input_reconstruction_wrong.ExtractSlice(current_projection_other, angles, 1.0f, false);
 
         current_projection_correct_template.SwapRealSpaceQuadrants( );
         current_projection_other.SwapRealSpaceQuadrants( );
 
         current_projection_correct_template.MultiplyPixelWise(projection_filter);
-        current_projection_other.MultiplyPixelWise(projection_filter);
+        if ( use_indep_refined_coordinates )
+            current_projection_other.MultiplyPixelWise(projection_filter_indep);
+        else
+            current_projection_other.MultiplyPixelWise(projection_filter);
 
         current_projection_correct_template.BackwardFFT( );
         current_projection_other.BackwardFFT( );
