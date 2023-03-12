@@ -1,0 +1,1 @@
+long find_match_template_peaks(Image& scaled_mip, ArrayOfTemplateMatchFoundPeakInfos* all_peak_infos, Image& phi, Image& theta, Image& psi, Image& defocus);
