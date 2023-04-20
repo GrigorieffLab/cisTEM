@@ -673,7 +673,7 @@ void MatchTemplatePanel::StartEstimationClick(wxCommandEvent& event) {
 
     if ( use_gpu ) {
         //	number_of_jobs_per_image_in_gui = std::max((int)1,number_of_processes / 2); // Using two threads in each job
-        number_of_jobs_per_image_in_gui = number_of_processes; // Using two threads in each job
+        number_of_jobs_per_image_in_gui = 1; // Using two threads in each job
 
         number_of_jobs = number_of_jobs_per_image_in_gui * active_group.number_of_members;
 
