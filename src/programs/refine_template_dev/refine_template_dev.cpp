@@ -149,8 +149,23 @@ bool RefineTemplateDevApp::DoCalculation( ) {
                 current_image.Compute1DPowerSpectrumCurve(&whitening_filter, &number_of_terms);
                 whitening_filter.SquareRoot( );
                 whitening_filter.Reciprocal( );
+                whitening_filter.data_y[0] = 0.0f;
+                float average              = 0.0;
+                int   num                  = 0;
+                for ( int i = 0; i < whitening_filter.number_of_points; i++ ) {
+                    if ( whitening_filter.data_x[i] > 0.35 && whitening_filter.data_x[i] < 0.45 ) {
+                        average += whitening_filter.data_y[i];
+                        num++;
+                    }
+                }
+                average /= num;
+                for ( int i = 0; i < whitening_filter.number_of_points; i++ ) {
+                    if ( whitening_filter.data_x[i] >= 0.45 ) {
+                        whitening_filter.data_y[i] = average;
+                    }
+                }
                 whitening_filter.MultiplyByConstant(1.0f / whitening_filter.ReturnMaximumValue( ));
-
+                whitening_filter.WriteToFile(wxString::Format("whitening_filter_corrscale_%s.txt", wxFileName(input_matches.all_parameters[match_id].original_image_filename).GetName( )));
                 current_image.ApplyCurveFilter(&whitening_filter);
                 current_image.ZeroCentralPixel( );
                 current_image.DivideByConstant(sqrt(current_image.ReturnSumOfSquares( )));
