@@ -675,9 +675,14 @@ bool MatchTemplateApp::DoCalculation( ) {
     whitening_filter.SquareRoot( );
     whitening_filter.Reciprocal( );
     whitening_filter.MultiplyByConstant(1.0f / whitening_filter.ReturnMaximumValue( ));
-
+    //for ( int i = 0; i < whitening_filter.number_of_points; i++ ) {
+    //    whitening_filter.data_y[i] = whitening_filter.data_x[i] / (whitening_filter.data_x[i] + 0.1);
+    //}
     //whitening_filter.WriteToFile("/tmp/filter.txt");
     input_image.ApplyCurveFilter(&whitening_filter);
+    //for ( int i = 0; i < whitening_filter.number_of_points; i++ ) {
+    //    whitening_filter.data_y[i] = whitening_filter.data_x[i] / (whitening_filter.data_x[i] + 0.02);
+    //}
     input_image.ZeroCentralPixel( );
     input_image.DivideByConstant(sqrtf(input_image.ReturnSumOfSquares( )));
     //input_image.QuickAndDirtyWriteSlice("/tmp/white.mrc", 1);
