@@ -19,21 +19,27 @@ void Project3DApp::DoInteractiveUserInput( ) {
     wxString input_reconstruction;
     wxString ouput_projection_stack;
     wxString input_whitening_context_filename;
-    int      first_particle = 1;
-    int      last_particle  = 0;
-    float    pixel_size     = 1;
-    //	float		voltage_kV = 300.0;
-    //	float		spherical_aberration_mm = 2.7;
-    //	float		amplitude_contrast = 0.07;
-    //	float		beam_tilt_x;
-    //	float		beam_tilt_y;
-    //	float		particle_shift_x;
-    //	float		particle_shift_y;
-    float    mask_radius = 100.0;
-    float    padding     = 1.0;
-    float    wanted_SNR  = 1.0;
-    wxString my_symmetry = "C1";
-    bool     apply_CTF;
+    int      first_particle          = 1;
+    int      last_particle           = 0;
+    float    pixel_size              = 1;
+    float    voltage_kV              = 300.0;
+    float    spherical_aberration_mm = 2.7;
+    float    amplitude_contrast      = 0.07;
+    float    beam_tilt_x;
+    float    beam_tilt_y;
+    float    particle_shift_x;
+    float    particle_shift_y;
+    float    defocus1 = 10000.0f;
+    float    defocus2 = 10000.0f;
+    float    defocus_angle;
+    float    phase_shift;
+    float    mask_radius         = 100.0;
+    float    lowpass_mask_radius = 0.01;
+    float    lowpass_mask_edge   = 0.1;
+    float    padding             = 1.0;
+    float    wanted_SNR          = 1.0;
+    wxString my_symmetry         = "C1";
+    bool     apply_CTF           = false;
     bool     apply_shifts;
     bool     apply_mask;
     bool     apply_whitening_filter;
@@ -57,7 +63,13 @@ void Project3DApp::DoInteractiveUserInput( ) {
     }
     else {
         angular_step = my_input->GetFloatFromUser("Angular step for projection", "Angular step size for grid projection", "0.0", 0.1);
-        apply_CTF    = false;
+        apply_CTF    = my_input->GetYesNoFromUser("Apply CTF", "Should the CTF be applied to the output projections?", "No");
+        if ( apply_CTF ) {
+            defocus1      = my_input->GetFloatFromUser("Defocus1 (angstroms)", "Defocus1 for the input image", "10000", 0.0);
+            defocus2      = my_input->GetFloatFromUser("Defocus2 (angstroms)", "Defocus2 for the input image", "10000", 0.0);
+            defocus_angle = my_input->GetFloatFromUser("Defocus Angle (degrees)", "Defocus Angle for the input image", "0.0");
+            phase_shift   = my_input->GetFloatFromUser("Phase Shift (degrees)", "Additional phase shift in degrees", "0.0");
+        }
         apply_shifts = false;
     }
 
@@ -92,45 +104,68 @@ void Project3DApp::DoInteractiveUserInput( ) {
     delete my_input;
 
     //	my_current_job.Reset(14);
-    my_current_job.ManualSetArguments("tttiifffftbbbbbfibt", input_star_filename.ToUTF8( ).data( ),
+    my_current_job.ManualSetArguments("tttiifffftbfffffffbbffbbfibt",
+                                      input_star_filename.ToUTF8( ).data( ),
                                       input_reconstruction.ToUTF8( ).data( ),
                                       ouput_projection_stack.ToUTF8( ).data( ),
-                                      first_particle, last_particle,
-                                      pixel_size, mask_radius, wanted_SNR, padding,
+                                      first_particle,
+                                      last_particle,
+                                      pixel_size,
+                                      mask_radius,
+                                      wanted_SNR,
+                                      padding,
                                       my_symmetry.ToUTF8( ).data( ),
-                                      apply_CTF, apply_shifts, apply_mask, add_noise, project_based_on_star, angular_step, max_threads,
-                                      apply_whitening_filter, input_whitening_context_filename.ToUTF8( ).data( ));
+                                      apply_CTF,
+                                      voltage_kV,
+                                      spherical_aberration_mm,
+                                      amplitude_contrast,
+                                      defocus1,
+                                      defocus2,
+                                      defocus_angle,
+                                      phase_shift,
+                                      apply_shifts,
+                                      apply_mask,
+                                      lowpass_mask_radius,
+                                      lowpass_mask_edge,
+                                      add_noise,
+                                      project_based_on_star,
+                                      angular_step,
+                                      max_threads,
+                                      apply_whitening_filter,
+                                      input_whitening_context_filename.ToUTF8( ).data( ));
 }
 
 // override the do calculation method which will be what is actually run..
 
 bool Project3DApp::DoCalculation( ) {
-    wxString input_star_filename     = my_current_job.arguments[0].ReturnStringArgument( );
-    wxString input_reconstruction    = my_current_job.arguments[1].ReturnStringArgument( );
-    wxString output_projection_stack = my_current_job.arguments[2].ReturnStringArgument( );
-    int      first_particle          = my_current_job.arguments[3].ReturnIntegerArgument( );
-    int      last_particle           = my_current_job.arguments[4].ReturnIntegerArgument( );
-    float    pixel_size              = my_current_job.arguments[5].ReturnFloatArgument( );
-    //	float    voltage_kV							= my_current_job.arguments[6].ReturnFloatArgument();
-    //	float 	 spherical_aberration_mm			= my_current_job.arguments[7].ReturnFloatArgument();
-    //	float    amplitude_contrast					= my_current_job.arguments[8].ReturnFloatArgument();
-    //	float    beam_tilt_x						= my_current_job.arguments[9].ReturnFloatArgument();
-    //	float    beam_tilt_y						= my_current_job.arguments[10].ReturnFloatArgument();
-    //	float    particle_shift_x					= my_current_job.arguments[11].ReturnFloatArgument();
-    //	float    particle_shift_y					= my_current_job.arguments[12].ReturnFloatArgument();
+    wxString input_star_filename              = my_current_job.arguments[0].ReturnStringArgument( );
+    wxString input_reconstruction             = my_current_job.arguments[1].ReturnStringArgument( );
+    wxString output_projection_stack          = my_current_job.arguments[2].ReturnStringArgument( );
+    int      first_particle                   = my_current_job.arguments[3].ReturnIntegerArgument( );
+    int      last_particle                    = my_current_job.arguments[4].ReturnIntegerArgument( );
+    float    pixel_size                       = my_current_job.arguments[5].ReturnFloatArgument( );
     float    mask_radius                      = my_current_job.arguments[6].ReturnFloatArgument( );
     float    wanted_SNR                       = my_current_job.arguments[7].ReturnFloatArgument( );
     float    padding                          = my_current_job.arguments[8].ReturnFloatArgument( );
     wxString my_symmetry                      = my_current_job.arguments[9].ReturnStringArgument( );
     bool     apply_CTF                        = my_current_job.arguments[10].ReturnBoolArgument( );
-    bool     apply_shifts                     = my_current_job.arguments[11].ReturnBoolArgument( );
-    bool     apply_mask                       = my_current_job.arguments[12].ReturnBoolArgument( );
-    bool     add_noise                        = my_current_job.arguments[13].ReturnBoolArgument( );
-    bool     project_based_on_star            = my_current_job.arguments[14].ReturnBoolArgument( );
-    float    angular_step                     = my_current_job.arguments[15].ReturnFloatArgument( );
-    int      max_threads                      = my_current_job.arguments[16].ReturnIntegerArgument( );
-    bool     apply_whitening_filter           = my_current_job.arguments[17].ReturnBoolArgument( );
-    wxString input_whitening_context_filename = my_current_job.arguments[18].ReturnStringArgument( );
+    float    voltage_kV                       = my_current_job.arguments[11].ReturnFloatArgument( );
+    float    spherical_aberration_mm          = my_current_job.arguments[12].ReturnFloatArgument( );
+    float    amplitude_contrast               = my_current_job.arguments[13].ReturnFloatArgument( );
+    float    defocus1                         = my_current_job.arguments[14].ReturnFloatArgument( );
+    float    defocus2                         = my_current_job.arguments[15].ReturnFloatArgument( );
+    float    defocus_angle                    = my_current_job.arguments[16].ReturnFloatArgument( );
+    float    phase_shift                      = my_current_job.arguments[17].ReturnFloatArgument( );
+    bool     apply_shifts                     = my_current_job.arguments[18].ReturnBoolArgument( );
+    bool     apply_mask                       = my_current_job.arguments[19].ReturnBoolArgument( );
+    float    lowpass_mask_radius              = my_current_job.arguments[20].ReturnFloatArgument( );
+    float    lowpass_mask_edge                = my_current_job.arguments[21].ReturnFloatArgument( );
+    bool     add_noise                        = my_current_job.arguments[22].ReturnBoolArgument( );
+    bool     project_based_on_star            = my_current_job.arguments[23].ReturnBoolArgument( );
+    float    angular_step                     = my_current_job.arguments[24].ReturnFloatArgument( );
+    int      max_threads                      = my_current_job.arguments[25].ReturnIntegerArgument( );
+    bool     apply_whitening_filter           = my_current_job.arguments[26].ReturnBoolArgument( );
+    wxString input_whitening_context_filename = my_current_job.arguments[27].ReturnStringArgument( );
 
     Image               projection_image;
     Image               final_image;
@@ -266,7 +301,7 @@ bool Project3DApp::DoCalculation( ) {
     projection_3d.CopyFrom(input_3d.density_map);
 
 #pragma omp parallel num_threads(max_threads) default(none) shared(global_random_number_generator, input_star_file, first_particle, last_particle, apply_CTF, apply_shifts, \
-                                                                   pixel_size, output_file, add_noise, wanted_SNR, apply_mask, mask_radius, my_progress, lines_to_process, image_counter, projection_3d, input_file, global_euler_search, number_of_projections_to_calculate, project_based_on_star, apply_whitening_filter, projection_filter, whitening_filter) private(current_image, input_parameters, my_parameters, my_ctf, projection_image, final_image, variance)
+                                                                   pixel_size, output_file, add_noise, wanted_SNR, apply_mask, mask_radius, my_progress, lines_to_process, image_counter, projection_3d, input_file, global_euler_search, number_of_projections_to_calculate, project_based_on_star, apply_whitening_filter, projection_filter, whitening_filter, voltage_kV, spherical_aberration_mm, amplitude_contrast, defocus1, defocus2, defocus_angle, phase_shift, lowpass_mask_radius, lowpass_mask_edge) private(current_image, input_parameters, my_parameters, my_ctf, projection_image, final_image, variance)
     {
 
         projection_image.Allocate(input_file.ReturnXSize( ), input_file.ReturnYSize( ), false);
@@ -282,10 +317,11 @@ bool Project3DApp::DoCalculation( ) {
             }
             else {
                 my_parameters.Init(global_euler_search.list_of_search_parameters[current_image][0], global_euler_search.list_of_search_parameters[current_image][1], 0.0, 0.0, 0.0f);
+                my_ctf.Init(voltage_kV, spherical_aberration_mm, amplitude_contrast, defocus1, defocus2, defocus_angle, 0.0, 0.0, 0.0, pixel_size, phase_shift, 0.0, 0.0, 0.0, 0.0);
             }
 
             projection_3d.ExtractSlice(projection_image, my_parameters);
-            projection_image.complex_values[0] = projection_3d.complex_values[0];
+            //projection_image.complex_values[0] = projection_3d.complex_values[0];
 
             if ( apply_CTF ) {
                 if ( apply_whitening_filter ) {
@@ -294,8 +330,10 @@ bool Project3DApp::DoCalculation( ) {
                     projection_filter.ApplyCurveFilter(&whitening_filter);
                     projection_image.MultiplyPixelWise(projection_filter);
                 }
-                else
+                else {
+                    my_ctf.SetDefocus(defocus1 / pixel_size, defocus2 / pixel_size, deg_2_rad(defocus_angle));
                     projection_image.ApplyCTF(my_ctf, false, true);
+                }
             }
 
             if ( apply_shifts )
