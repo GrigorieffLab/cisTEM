@@ -46,6 +46,7 @@ void MakeTemplateResult::DoInteractiveUserInput( ) {
     read_coordinates = my_input->GetYesNoFromUser("Read coordinates from file?", "Should the target coordinates be read from a file instead of search results?", "No");
     if ( ! read_coordinates ) {
         input_mip_filename             = my_input->GetFilenameFromUser("Input MIP file", "The file for saving the maximum intensity projection image", "mip.mrc", false);
+        input_unscaled_mip_filename    = my_input->GetFilenameFromUser("Input (unscaled) MIP file", "The file for saving the maximum intensity projection image", "mip.mrc", false);
         input_best_psi_filename        = my_input->GetFilenameFromUser("Input psi file", "The file containing the best psi image", "psi.mrc", false);
         input_best_theta_filename      = my_input->GetFilenameFromUser("Input theta file", "The file containing the best psi image", "theta.mrc", false);
         input_best_phi_filename        = my_input->GetFilenameFromUser("Input phi file", "The file containing the best psi image", "phi.mrc", false);
@@ -68,13 +69,13 @@ void MakeTemplateResult::DoInteractiveUserInput( ) {
     pixel_size                      = my_input->GetFloatFromUser("Pixel size of images (A)", "Pixel size of input images in Angstroms", "1.0", 0.0);
     binning_factor                  = my_input->GetFloatFromUser("Binning factor for slab", "Factor to reduce size of output slab", "4.0", 0.0);
     ignore_N_pixels_from_the_border = my_input->GetIntFromUser("Ignore N pixels from the edge of the MIP", "Defaults to 1/2 the template dimension (-1)", "-1", -1);
-    input_unscaled_mip_filename     = my_input->GetFilenameFromUser("Input (unscaled) MIP file", "The file for saving the maximum intensity projection image", "mip.mrc", false);
 
     delete my_input;
 
     //	my_current_job.Reset(14);
-    my_current_job.ManualSetArguments("ttttttttttfffffbiiiit", input_reconstruction_filename.ToUTF8( ).data( ),
+    my_current_job.ManualSetArguments("tttttttttttfffffbiiii", input_reconstruction_filename.ToUTF8( ).data( ),
                                       input_mip_filename.ToUTF8( ).data( ),
+                                      input_unscaled_mip_filename.ToUTF8( ).data( ),
                                       input_best_psi_filename.ToUTF8( ).data( ),
                                       input_best_theta_filename.ToUTF8( ).data( ),
                                       input_best_phi_filename.ToUTF8( ).data( ),
@@ -90,8 +91,7 @@ void MakeTemplateResult::DoInteractiveUserInput( ) {
                                       read_coordinates,
                                       mip_x_dimension, mip_y_dimension,
                                       result_number,
-                                      ignore_N_pixels_from_the_border,
-                                      input_unscaled_mip_filename);
+                                      ignore_N_pixels_from_the_border);
 }
 
 // override the do calculation method which will be what is actually run..
@@ -102,25 +102,25 @@ bool MakeTemplateResult::DoCalculation( ) {
 
     wxString input_reconstruction_filename   = my_current_job.arguments[0].ReturnStringArgument( );
     wxString input_mip_filename              = my_current_job.arguments[1].ReturnStringArgument( );
-    wxString input_best_psi_filename         = my_current_job.arguments[2].ReturnStringArgument( );
-    wxString input_best_theta_filename       = my_current_job.arguments[3].ReturnStringArgument( );
-    wxString input_best_phi_filename         = my_current_job.arguments[4].ReturnStringArgument( );
-    wxString input_best_defocus_filename     = my_current_job.arguments[5].ReturnStringArgument( );
-    wxString input_best_pixel_size_filename  = my_current_job.arguments[6].ReturnStringArgument( );
-    wxString output_result_image_filename    = my_current_job.arguments[7].ReturnStringArgument( );
-    wxString output_slab_filename            = my_current_job.arguments[8].ReturnStringArgument( );
-    wxString xyz_coords_filename             = my_current_job.arguments[9].ReturnStringArgument( );
-    float    wanted_threshold                = my_current_job.arguments[10].ReturnFloatArgument( );
-    float    min_peak_radius                 = my_current_job.arguments[11].ReturnFloatArgument( );
-    float    slab_thickness                  = my_current_job.arguments[12].ReturnFloatArgument( );
-    float    pixel_size                      = my_current_job.arguments[13].ReturnFloatArgument( );
-    float    binning_factor                  = my_current_job.arguments[14].ReturnFloatArgument( );
-    bool     read_coordinates                = my_current_job.arguments[15].ReturnBoolArgument( );
-    int      mip_x_dimension                 = my_current_job.arguments[16].ReturnIntegerArgument( );
-    int      mip_y_dimension                 = my_current_job.arguments[17].ReturnIntegerArgument( );
-    int      result_number                   = my_current_job.arguments[18].ReturnIntegerArgument( );
-    int      ignore_N_pixels_from_the_border = my_current_job.arguments[19].ReturnIntegerArgument( );
-    wxString input_unscaled_mip_filename     = my_current_job.arguments[20].ReturnStringArgument( );
+    wxString input_unscaled_mip_filename     = my_current_job.arguments[2].ReturnStringArgument( );
+    wxString input_best_psi_filename         = my_current_job.arguments[3].ReturnStringArgument( );
+    wxString input_best_theta_filename       = my_current_job.arguments[4].ReturnStringArgument( );
+    wxString input_best_phi_filename         = my_current_job.arguments[5].ReturnStringArgument( );
+    wxString input_best_defocus_filename     = my_current_job.arguments[6].ReturnStringArgument( );
+    wxString input_best_pixel_size_filename  = my_current_job.arguments[7].ReturnStringArgument( );
+    wxString output_result_image_filename    = my_current_job.arguments[8].ReturnStringArgument( );
+    wxString output_slab_filename            = my_current_job.arguments[9].ReturnStringArgument( );
+    wxString xyz_coords_filename             = my_current_job.arguments[10].ReturnStringArgument( );
+    float    wanted_threshold                = my_current_job.arguments[11].ReturnFloatArgument( );
+    float    min_peak_radius                 = my_current_job.arguments[12].ReturnFloatArgument( );
+    float    slab_thickness                  = my_current_job.arguments[13].ReturnFloatArgument( );
+    float    pixel_size                      = my_current_job.arguments[14].ReturnFloatArgument( );
+    float    binning_factor                  = my_current_job.arguments[15].ReturnFloatArgument( );
+    bool     read_coordinates                = my_current_job.arguments[16].ReturnBoolArgument( );
+    int      mip_x_dimension                 = my_current_job.arguments[17].ReturnIntegerArgument( );
+    int      mip_y_dimension                 = my_current_job.arguments[18].ReturnIntegerArgument( );
+    int      result_number                   = my_current_job.arguments[19].ReturnIntegerArgument( );
+    int      ignore_N_pixels_from_the_border = my_current_job.arguments[20].ReturnIntegerArgument( );
 
     float padding = 2.0f;
 
@@ -280,7 +280,7 @@ bool MakeTemplateResult::DoCalculation( ) {
                         current_defocus    = defocus_image.real_values[address];
                         current_pixel_size = pixel_size_image.real_values[address];
                         current_mip        = mip_unscaled_image.real_values[address];
-                        current_scaled_mip = mip_image.real_values[address];
+                        current_scaled_mip = current_peak.value;
                     }
 
                     address++;
