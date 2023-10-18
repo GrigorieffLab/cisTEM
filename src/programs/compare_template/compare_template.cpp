@@ -470,7 +470,7 @@ bool CompareTemplateApp::DoCalculation( ) {
             int k2               = rand( ) % (last_search_position - first_search_position + 1);
             sampled_psi[iView]   = psi_tm[k1];
             sampled_theta[iView] = theta_tm[k2];
-            sampled_phi[iView]   = phi_tm[k1];
+            sampled_phi[iView]   = phi_tm[k2];
             wxPrintf("k1 = %i k2=%i\n", k1, k2);
             wxPrintf("psi theta phi = %f %f %f \n", sampled_psi[iView], sampled_theta[iView], sampled_phi[iView]);
         }

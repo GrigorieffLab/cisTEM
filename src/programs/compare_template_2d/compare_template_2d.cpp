@@ -413,7 +413,6 @@ bool CompareTemplate2DApp::DoCalculation( ) {
                 projection_filter.CalculateCTFImage(input_ctf);
                 projection_filter.ApplyCurveFilter(&whitening_filter);
             }
-            wxPrintf("psi theta phi defocus1 defocus2 defocus_angle= %f %f %f %f %f %f\n", sampled_psi[iView], sampled_theta[iView], sampled_phi[iView], defocus1, defocus2, defocus_angle);
             if ( use_indep_refined_coordinates ) {
                 sampled_psi_indep[iView]   = input_star_file_indep.ReturnPsi(iView);
                 sampled_theta_indep[iView] = input_star_file_indep.ReturnTheta(iView);
@@ -422,7 +421,6 @@ bool CompareTemplate2DApp::DoCalculation( ) {
                 input_ctf_indep.SetDefocus(input_star_file_indep.ReturnDefocus1(iView) / pixel_size, input_star_file_indep.ReturnDefocus2(iView) / pixel_size, deg_2_rad(input_star_file_indep.ReturnDefocusAngle(iView)));
                 projection_filter_indep.CalculateCTFImage(input_ctf_indep);
                 projection_filter_indep.ApplyCurveFilter(&whitening_filter);
-                wxPrintf("psi theta phi defocus1 defocus2 defocus_angle= %f %f %f %f %f %f\n", sampled_psi[iView], sampled_theta[iView], sampled_phi[iView], defocus1, defocus2, defocus_angle, input_star_file_indep.ReturnDefocus1(iView), input_star_file_indep.ReturnDefocus2(iView), input_star_file_indep.ReturnDefocusAngle(iView));
             }
         }
         else {
@@ -430,9 +428,7 @@ bool CompareTemplate2DApp::DoCalculation( ) {
             int k2               = rand( ) % (last_search_position - first_search_position + 1);
             sampled_psi[iView]   = psi_tm[k1];
             sampled_theta[iView] = theta_tm[k2];
-            sampled_phi[iView]   = phi_tm[k1];
-            wxPrintf("k1 = %i k2=%i\n", k1, k2);
-            wxPrintf("psi theta phi defocus1 defocus2 defocus_angle= %f %f %f %f %f %f\n", sampled_psi[iView], sampled_theta[iView], sampled_phi[iView], defocus1, defocus2, defocus_angle);
+            sampled_phi[iView]   = phi_tm[k2];
         }
 
         angles.Init(sampled_phi[iView], sampled_theta[iView], sampled_psi[iView], 0.0, 0.0);
