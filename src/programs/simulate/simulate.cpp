@@ -525,7 +525,7 @@ class SimulateApp : public MyApp {
     void apply_sqrt_DQE_or_NTF(Image* image_in, int iTilt_IDX, bool do_root_DQE);
 
     inline float return_bfactor(float pdb_bfactor) {
-        return 0.25f * (this->min_bFactor + pdb_bfactor * this->bFactor_scaling);
+        return this->min_bFactor + pdb_bfactor * this->bFactor_scaling;
     }
 
     inline float return_scattering_potential(corners& R, float* bPlusB, AtomType& atom_id) {
@@ -935,7 +935,7 @@ void SimulateApp::DoInteractiveUserInput( ) {
                 // Assuming this is constant for all particles and frames FIXME
                 dose_per_frame = input_star_file.ReturnTotalExposure(0) - input_star_file.ReturnPreExposure(0);
                 // tmp override for testing FIXME
-                dose_per_frame         = 1;
+                //dose_per_frame         = 1;
                 current_total_exposure = 1;
                 pre_exposure           = 1;
                 for ( int counter = 0; counter < number_preexisting_particles; counter++ ) {
@@ -3250,8 +3250,6 @@ void SimulateApp::fill_water_potential(const PDB* current_specimen, Image* scatt
 #pragma omp atomic update
                                 projected_water_atoms.real_values[projected_water_atoms.ReturnReal1DAddressFromPhysicalCoord(indX, indY, 0)] +=
                                         (current_weight * this->projected_water[iSubPixLinearIndex].ReturnRealPixelFromPhysicalCoord(sx, sy, 0)); // TODO could I land out of bounds?] += projected_water_atoms[iSubPixLinearIndex].real_values[iWater];
-                                //select projected water potential from library of different subpixel offset and add to the coordinates that this water affects
-
                                 if ( ReturnThreadNumberOfCurrentThread( ) == 0 )
                                     timer.lap("omp");
                             }
@@ -3299,9 +3297,7 @@ void SimulateApp::fill_water_potential(const PDB* current_specimen, Image* scatt
         this->project(water_mask_slab, tmpPrj, 0);
         tmpPrj->DivideByConstant((float)water_mask_slab->logical_z_dimension);
         float mean_water_value = projected_water_atoms.ReturnAverageOfRealValues(-0.0001, false); // / water_mask.logical_z_dimension;
-        // each value in projected_water_atoms x,y means the summed projected water potential from all waters
         projected_water_atoms.CopyFrom(tmpPrj);
-        wxPrintf("mean water value = %f @ %i th slab\n", mean_water_value, iSlab);
         projected_water_atoms.MultiplyByConstant(mean_water_value);
 
         //        tmpPrj[0].QuickAndDirtyWriteSlice("checkWater.mrc",1,true);
@@ -3325,7 +3321,7 @@ void SimulateApp::fill_water_potential(const PDB* current_specimen, Image* scatt
             //            if (SOLVENT_TYPE == oxygen)
             //            {
             // The total elastic cross section of water is nearly equal to water but the inelastic is higher than expected (via 22.2/Z Reimer) using values from Wanner et al. 2006
-            oxygen_inelastic_to_elastic_ratio = sqrtf((inelastic_scalar_water / (sp.ReturnAtomicNumber(plasmon))));
+            oxygen_inelastic_to_elastic_ratio = sqrtf((inelastic_scalar_water / (sp.ReturnAtomicNumber(plasmon)))); // inelastic_scalar_water=0.0725 plasmon Z = 7.35
             //            }
             //            else
             //            {
