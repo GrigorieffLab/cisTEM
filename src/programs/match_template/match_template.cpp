@@ -3,7 +3,7 @@
 #include "../../constants/constants.h"
 
 // Values for data that are passed around in the results.
-const int number_of_output_images     = 8; //mip, psi, theta, phi, pixel, defocus, sums, sqsums (scaled mip is not sent out)
+const int number_of_output_images     = 9; //mip, psi, theta, phi, pixel, defocus, sums, sqsums (scaled mip is not sent out)
 const int number_of_meta_data_values  = 6; // img_x, img_y, number cccs, histogram values.
 const int MAX_ALLOWED_NUMBER_OF_PEAKS = 1000; // An error will be thrown and job aborted if this number of peaks is exceeded in the make template results block
 
@@ -23,6 +23,7 @@ class AggregatedTemplateResult {
     float* collated_pixel_sums;
     float* collated_pixel_square_sums;
     long*  collated_histogram_data;
+    float* collated_mcp_data;
 
     AggregatedTemplateResult( );
     ~AggregatedTemplateResult( );
@@ -140,6 +141,7 @@ void MatchTemplateApp::DoInteractiveUserInput( ) {
     wxString best_phi_output_file;
     wxString best_defocus_output_file;
     wxString best_pixel_size_output_file;
+    wxString best_coc_output_file;
 
     wxString output_histogram_file;
     wxString correlation_std_output_file;
@@ -210,6 +212,7 @@ void MatchTemplateApp::DoInteractiveUserInput( ) {
     use_gpu_input = my_input->GetYesNoFromUser("Use GPU", "Offload expensive calcs to GPU", "No");
     max_threads   = my_input->GetIntFromUser("Max. threads to use for calculation", "when threading, what is the max threads to run", "1", 1);
 #endif
+    best_coc_output_file = my_input->GetFilenameFromUser("Output coc file", "The file for saving the coc image", "coc.mrc", false);
 
     int   first_search_position           = -1;
     int   last_search_position            = -1;
@@ -222,7 +225,7 @@ void MatchTemplateApp::DoInteractiveUserInput( ) {
 
     delete my_input;
 
-    my_current_job.ManualSetArguments("ttffffffffffifffffbfftttttttttftiiiitttfbi", input_search_images.ToUTF8( ).data( ),
+    my_current_job.ManualSetArguments("ttffffffffffifffffbfftttttttttftiiiitttfbit", input_search_images.ToUTF8( ).data( ),
                                       input_reconstruction.ToUTF8( ).data( ),
                                       pixel_size,
                                       voltage_kV,
@@ -263,7 +266,8 @@ void MatchTemplateApp::DoInteractiveUserInput( ) {
                                       result_filename.ToUTF8( ).data( ),
                                       min_peak_radius,
                                       use_gpu_input,
-                                      max_threads);
+                                      max_threads,
+                                      best_coc_output_file.ToUTF8( ).data( ));
 }
 
 // override the do calculation method which will be what is actually run..
@@ -373,6 +377,7 @@ bool MatchTemplateApp::DoCalculation( ) {
     float    min_peak_radius                 = my_current_job.arguments[39].ReturnFloatArgument( );
     bool     use_gpu                         = my_current_job.arguments[40].ReturnBoolArgument( );
     int      max_threads                     = my_current_job.arguments[41].ReturnIntegerArgument( );
+    wxString best_coc_output_file            = my_current_job.arguments[42].ReturnStringArgument( );
 
     if ( is_running_locally == false )
         max_threads = number_of_threads_requested_on_command_line; // OVERRIDE FOR THE GUI, AS IT HAS TO BE SET ON THE COMMAND LINE...
@@ -456,6 +461,8 @@ bool MatchTemplateApp::DoCalculation( ) {
 
     Image input_image;
     Image padded_reference;
+    Image SCTF_image; // template (S)*CTF
+    Image SCTF_padded_image;
     Image input_reconstruction;
     Image template_reconstruction;
     Image current_projection;
@@ -464,6 +471,7 @@ bool MatchTemplateApp::DoCalculation( ) {
     Image projection_filter;
 
     Image max_intensity_projection;
+    Image max_coc_projection; // CoC at best-aligned angle (aligned by max cross-correlation)
 
     Image best_psi;
     Image best_theta;
@@ -566,7 +574,9 @@ bool MatchTemplateApp::DoCalculation( ) {
     }
 
     padded_reference.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
+    SCTF_padded_image.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
     max_intensity_projection.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
+    max_coc_projection.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
     best_psi.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
     best_theta.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
     best_phi.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
@@ -578,7 +588,9 @@ bool MatchTemplateApp::DoCalculation( ) {
     double* correlation_pixel_sum_of_squares = new double[input_image.real_memory_allocated];
 
     padded_reference.SetToConstant(0.0f);
+    SCTF_padded_image.SetToConstant(0.0f);
     max_intensity_projection.SetToConstant(-FLT_MAX);
+    max_coc_projection.SetToConstant(-FLT_MAX);
     best_psi.SetToConstant(0.0f);
     best_theta.SetToConstant(0.0f);
     best_phi.SetToConstant(0.0f);
@@ -606,6 +618,7 @@ bool MatchTemplateApp::DoCalculation( ) {
     // assume cube
 
     current_projection.Allocate(input_reconstruction_file.ReturnXSize( ), input_reconstruction_file.ReturnXSize( ), false);
+    SCTF_image.Allocate(input_reconstruction_file.ReturnXSize( ), input_reconstruction_file.ReturnXSize( ), false);
     projection_filter.Allocate(input_reconstruction_file.ReturnXSize( ), input_reconstruction_file.ReturnXSize( ), false);
     template_reconstruction.Allocate(input_reconstruction.logical_x_dimension, input_reconstruction.logical_y_dimension, input_reconstruction.logical_z_dimension, true);
     if ( padding != 1.0f )
@@ -675,7 +688,7 @@ bool MatchTemplateApp::DoCalculation( ) {
     whitening_filter.MultiplyByConstant(1.0f / whitening_filter.ReturnMaximumValue( ));
 
     //whitening_filter.WriteToFile("/tmp/filter.txt");
-    input_image.ApplyCurveFilter(&whitening_filter);
+    //input_image.ApplyCurveFilter(&whitening_filter);
     input_image.ZeroCentralPixel( );
     input_image.DivideByConstant(sqrtf(input_image.ReturnSumOfSquares( )));
     //input_image.QuickAndDirtyWriteSlice("/tmp/white.mrc", 1);
@@ -806,7 +819,7 @@ bool MatchTemplateApp::DoCalculation( ) {
                     if ( tIDX == (max_threads - 1) )
                         t_last_search_position = maxPos;
 
-                    GPU[tIDX].Init(this, template_reconstruction, input_image, current_projection,
+                    GPU[tIDX].Init(this, template_reconstruction, input_image, current_projection, SCTF_image, SCTF_padded_image,
                                    pixel_size_search_range, pixel_size_step, pixel_size,
                                    defocus_search_range, defocus_step, defocus1, defocus2,
                                    psi_max, psi_start, psi_step,
@@ -834,7 +847,7 @@ bool MatchTemplateApp::DoCalculation( ) {
             input_ctf.SetDefocus((defocus1 + float(defocus_i) * defocus_step) / pixel_size, (defocus2 + float(defocus_i) * defocus_step) / pixel_size, deg_2_rad(defocus_angle));
             //            input_ctf.SetDefocus((defocus1 + 200) / pixel_size, (defocus2 + 200) / pixel_size, deg_2_rad(defocus_angle));
             projection_filter.CalculateCTFImage(input_ctf);
-            projection_filter.ApplyCurveFilter(&whitening_filter);
+            //projection_filter.ApplyCurveFilter(&whitening_filter);
 
             //            projection_filter.QuickAndDirtyWriteSlices("/tmp/projection_filter.mrc",1,projection_filter.logical_z_dimension,true,1.5);
             if ( use_gpu ) {
@@ -859,11 +872,14 @@ bool MatchTemplateApp::DoCalculation( ) {
                         phi_buffer.CopyFrom(&max_intensity_projection);
                         Image theta_buffer;
                         theta_buffer.CopyFrom(&max_intensity_projection);
+                        Image mcp_buffer;
+                        mcp_buffer.CopyFrom(&max_intensity_projection);
 
                         GPU[tIDX].d_max_intensity_projection.CopyDeviceToHost(mip_buffer, true, false);
                         GPU[tIDX].d_best_psi.CopyDeviceToHost(psi_buffer, true, false);
                         GPU[tIDX].d_best_phi.CopyDeviceToHost(phi_buffer, true, false);
                         GPU[tIDX].d_best_theta.CopyDeviceToHost(theta_buffer, true, false);
+                        GPU[tIDX].d_max_coc_projection.CopyDeviceToHost(mcp_buffer, true, false);
 
                         //                    mip_buffer.QuickAndDirtyWriteSlice("/tmp/tmpMipBuffer.mrc",1,1);
                         // TODO should prob aggregate these across all workers
@@ -895,6 +911,7 @@ bool MatchTemplateApp::DoCalculation( ) {
                                     best_phi.real_values[pixel_counter]                 = phi_buffer.real_values[pixel_counter];
                                     best_defocus.real_values[pixel_counter]             = float(defocus_i) * defocus_step;
                                     best_pixel_size.real_values[pixel_counter]          = float(size_i) * pixel_size_step;
+                                    max_coc_projection.real_values[pixel_counter]       = mcp_buffer.real_values[pixel_counter];
                                 }
 
                                 correlation_pixel_sum[pixel_counter] += (double)sum.real_values[pixel_counter];
@@ -943,6 +960,26 @@ bool MatchTemplateApp::DoCalculation( ) {
                     //if (first_search_position == 0) current_projection.QuickAndDirtyWriteSlice("/tmp/small_proj_nofilter.mrc", 1);
 
                     current_projection.MultiplyPixelWise(projection_filter);
+                    SCTF_image.CopyFrom(&current_projection);
+                    // autocorrelation function: S_flipped * S
+                    vmcMulByConj(SCTF_image.real_memory_allocated / 2, reinterpret_cast<MKL_Complex8*>(SCTF_image.complex_values), reinterpret_cast<MKL_Complex8*>(SCTF_image.complex_values), reinterpret_cast<MKL_Complex8*>(SCTF_image.complex_values), VML_EP | VML_FTZDAZ_ON | VML_ERRMODE_IGNORE);
+
+                    SCTF_image.SwapRealSpaceQuadrants( );
+
+                    // disable center flag, make object always in the center
+                    SCTF_image.object_is_centred_in_box = true;
+
+                    SCTF_image.BackwardFFT( );
+
+                    // pad
+
+                    SCTF_image.AddConstant(-SCTF_image.ReturnAverageOfRealValuesOnEdges( ));
+                    variance = SCTF_image.ReturnSumOfSquares( ) * SCTF_image.number_of_real_space_pixels / SCTF_padded_image.number_of_real_space_pixels - powf(SCTF_image.ReturnAverageOfRealValues( ) * SCTF_image.number_of_real_space_pixels / SCTF_padded_image.number_of_real_space_pixels, 2);
+                    SCTF_image.DivideByConstant(sqrtf(variance));
+                    SCTF_image.ClipIntoLargerRealSpace2D(&SCTF_padded_image);
+
+                    SCTF_padded_image.ForwardFFT( );
+                    SCTF_padded_image.ZeroCentralPixel( );
 
                     //if (first_search_position == 0) projection_filter.QuickAndDirtyWriteSlice("/tmp/projection_filter.mrc", 1);
                     //if (first_search_position == 0) current_projection.QuickAndDirtyWriteSlice("/tmp/small_proj_afterfilter.mrc", 1);
@@ -1002,6 +1039,10 @@ bool MatchTemplateApp::DoCalculation( ) {
                         padded_reference.complex_values[pixel_counter] = conj(padded_reference.complex_values[pixel_counter]) * input_image.complex_values[pixel_counter];
                     }
 #endif
+                    vmcMulByConj(SCTF_padded_image.real_memory_allocated / 2, reinterpret_cast<MKL_Complex8*>(padded_reference.complex_values), reinterpret_cast<MKL_Complex8*>(SCTF_padded_image.complex_values), reinterpret_cast<MKL_Complex8*>(SCTF_padded_image.complex_values), VML_EP | VML_FTZDAZ_ON | VML_ERRMODE_IGNORE);
+
+                    SCTF_padded_image.BackwardFFT( );
+                    SCTF_padded_image.SwapRealSpaceQuadrants( );
 
                     padded_reference.BackwardFFT( );
                     //                    padded_reference.QuickAndDirtyWriteSlice("cc.mrc", 1);
@@ -1030,6 +1071,7 @@ bool MatchTemplateApp::DoCalculation( ) {
                                 best_phi.real_values[pixel_counter]                 = global_euler_search.list_of_search_parameters[current_search_position][0];
                                 best_defocus.real_values[pixel_counter]             = float(defocus_i) * defocus_step;
                                 best_pixel_size.real_values[pixel_counter]          = float(size_i) * pixel_size_step;
+                                max_coc_projection.real_values[pixel_counter]       = SCTF_padded_image.real_values[pixel_counter];
                                 //                                if (size_i != 0) wxPrintf("size_i = %i\n", size_i);
                                 //                                correlation_pixel_sum[pixel_counter] = variance;
                             }
@@ -1063,6 +1105,7 @@ bool MatchTemplateApp::DoCalculation( ) {
 
                     current_projection.is_in_real_space = false;
                     padded_reference.is_in_real_space   = true;
+                    SCTF_padded_image.is_in_real_space  = true;
 
                     current_correlation_position++;
                     if ( is_running_locally == true )
@@ -1092,6 +1135,7 @@ bool MatchTemplateApp::DoCalculation( ) {
         input_image.BackwardFFT( );
         input_image.RotateInPlaceAboutZBy90Degrees(false);
         max_intensity_projection.RotateInPlaceAboutZBy90Degrees(false);
+        max_coc_projection.RotateInPlaceAboutZBy90Degrees(false);
 
         best_psi.RotateInPlaceAboutZBy90Degrees(false);
         // If the template is also rotated, then this additional accounting is not needed.
@@ -1210,6 +1254,9 @@ bool MatchTemplateApp::DoCalculation( ) {
         max_intensity_projection.Resize(original_input_image_x, original_input_image_y, 1, max_intensity_projection.ReturnAverageOfRealValuesOnEdges( ));
         max_intensity_projection.QuickAndDirtyWriteSlice(scaled_mip_output_file.ToStdString( ), 1, pixel_size);
 
+        max_coc_projection.Resize(original_input_image_x, original_input_image_y, 1, max_coc_projection.ReturnAverageOfRealValuesOnEdges( ));
+        max_coc_projection.QuickAndDirtyWriteSlice(best_coc_output_file.ToStdString( ), 1, pixel_size);
+
         correlation_pixel_sum_image.Resize(original_input_image_x, original_input_image_y, 1, correlation_pixel_sum_image.ReturnAverageOfRealValuesOnEdges( ));
         correlation_pixel_sum_image.QuickAndDirtyWriteSlice(correlation_avg_output_file.ToStdString( ), 1, pixel_size);
         correlation_pixel_sum_of_squares_image.Resize(original_input_image_x, original_input_image_y, 1, correlation_pixel_sum_of_squares_image.ReturnAverageOfRealValuesOnEdges( ));
@@ -1302,6 +1349,11 @@ bool MatchTemplateApp::DoCalculation( ) {
 
         max_intensity_projection.Resize(original_input_image_x, original_input_image_y, 1, central_average);
 
+        // mcp
+        central_average = max_coc_projection.ReturnAverageOfRealValues(central_region, false);
+        max_coc_projection.Resize(trim_x, trim_y, 1, central_average);
+        max_coc_projection.Resize(original_input_image_x, original_input_image_y, 1, central_average);
+
         //sum
         central_average = correlation_pixel_sum_image.ReturnAverageOfRealValues(central_region, false);
         correlation_pixel_sum_image.Resize(trim_x, trim_y, 1, central_average);
@@ -1392,6 +1444,11 @@ bool MatchTemplateApp::DoCalculation( ) {
 
         for ( pixel_counter = 0; pixel_counter < max_intensity_projection.real_memory_allocated; pixel_counter++ ) {
             result[result_array_counter] = correlation_pixel_sum_of_squares_image.real_values[pixel_counter];
+            result_array_counter++;
+        }
+
+        for ( pixel_counter = 0; pixel_counter < max_intensity_projection.real_memory_allocated; pixel_counter++ ) {
+            result[result_array_counter] = max_coc_projection.real_values[pixel_counter];
             result_array_counter++;
         }
 
@@ -1615,6 +1672,15 @@ void MatchTemplateApp::MasterHandleProgramDefinedResult(float* result_array, lon
         temp_image.QuickAndDirtyWriteSlice(current_job_package.jobs[(aggregated_results[array_location].image_number - 1) * number_of_expected_results].arguments[36].ReturnStringArgument( ), 1);
         temp_image.Deallocate( );
 
+        // mcp
+
+        temp_image.Allocate(int(aggregated_results[array_location].collated_data_array[0]), int(aggregated_results[array_location].collated_data_array[1]), true);
+        for ( pixel_counter = 0; pixel_counter < int(result_array[2]); pixel_counter++ ) {
+            temp_image.real_values[pixel_counter] = aggregated_results[array_location].collated_mcp_data[pixel_counter];
+        }
+        temp_image.QuickAndDirtyWriteSlice(current_job_package.jobs[(aggregated_results[array_location].image_number - 1) * number_of_expected_results].arguments[42].ReturnStringArgument( ), 1);
+        temp_image.Deallocate( );
+
         // histogram
 
         float histogram_step = (histogram_max - histogram_min) / float(histogram_number_of_points);
@@ -1835,6 +1901,7 @@ AggregatedTemplateResult::AggregatedTemplateResult( ) {
     collated_pixel_sums        = NULL;
     collated_pixel_square_sums = NULL;
     collated_histogram_data    = NULL;
+    collated_mcp_data          = NULL;
 }
 
 AggregatedTemplateResult::~AggregatedTemplateResult( ) {
@@ -1862,8 +1929,9 @@ void AggregatedTemplateResult::AddResult(float* result_array, long array_size, i
         collated_pixel_size_data   = &collated_data_array[offset + int(result_array[2]) * 5];
         collated_pixel_sums        = &collated_data_array[offset + int(result_array[2]) * 6];
         collated_pixel_square_sums = &collated_data_array[offset + int(result_array[2]) * 7];
+        collated_mcp_data          = &collated_data_array[offset + int(result_array[2]) * 8];
 
-        collated_histogram_data = (long*)&collated_data_array[offset + int(result_array[2]) * 8];
+        collated_histogram_data = (long*)&collated_data_array[offset + int(result_array[2]) * 9];
 
         collated_data_array[0] = result_array[0];
         collated_data_array[1] = result_array[1];
@@ -1883,8 +1951,9 @@ void AggregatedTemplateResult::AddResult(float* result_array, long array_size, i
     float* result_pixel_size_data   = &result_array[offset + int(result_array[2]) * 5];
     float* result_pixel_sums        = &result_array[offset + int(result_array[2]) * 6];
     float* result_pixel_square_sums = &result_array[offset + int(result_array[2]) * 7];
+    float* result_mcp_data          = &result_array[offset + int(result_array[2]) * 8];
 
-    long* input_histogram_data = (long*)&result_array[offset + int(result_array[2]) * 8];
+    long* input_histogram_data = (long*)&result_array[offset + int(result_array[2]) * 9];
 
     long pixel_counter;
     long result_array_counter;
@@ -1899,6 +1968,7 @@ void AggregatedTemplateResult::AddResult(float* result_array, long array_size, i
             collated_phi_data[pixel_counter]        = result_phi_data[pixel_counter];
             collated_defocus_data[pixel_counter]    = result_defocus_data[pixel_counter];
             collated_pixel_size_data[pixel_counter] = result_pixel_size_data[pixel_counter];
+            collated_mcp_data[pixel_counter]        = result_mcp_data[pixel_counter];
         }
     }
 

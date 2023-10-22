@@ -45,6 +45,7 @@ TemplateMatchJobResults::TemplateMatchJobResults( ) {
     projection_result_filename = "";
     avg_filename               = "";
     std_filename               = "";
+    coc_filename               = "";
 
     refinement_threshold            = 0.0f;
     used_threshold                  = 0.0f;

@@ -80,6 +80,9 @@ void GpuUtilTest::TemplateMatchingStandalone(int nThreads, int nGPUs) {
         Image best_defocus;
         Image best_pixel_size;
 
+        Image SCTF_image;
+        Image SCTF_padded_image;
+
         ImageFile template_reconstruction_file;
 
         template_reconstruction_file.OpenFile("/groups/grigorieff/home/himesb/cisTEM_2/cisTEM/trunk/gpu/include/template_reconstruction.mrc", false);
@@ -89,6 +92,9 @@ void GpuUtilTest::TemplateMatchingStandalone(int nThreads, int nGPUs) {
         input_image.QuickAndDirtyReadSlice("/groups/grigorieff/home/himesb/cisTEM_2/cisTEM/trunk/gpu/include/input_image.mrc", 1);
         current_projection.QuickAndDirtyReadSlice("/groups/grigorieff/home/himesb/cisTEM_2/cisTEM/trunk/gpu/include/current_projection.mrc", 1);
         padded_reference.QuickAndDirtyReadSlice("/groups/grigorieff/home/himesb/cisTEM_2/cisTEM/trunk/gpu/include/padded_reference.mrc", 1);
+        // pseudo images
+        SCTF_image.QuickAndDirtyReadSlice("/groups/grigorieff/home/himesb/cisTEM_2/cisTEM/trunk/gpu/include/current_projection.mrc", 1);
+        SCTF_padded_image.QuickAndDirtyReadSlice("/groups/grigorieff/home/himesb/cisTEM_2/cisTEM/trunk/gpu/include/current_projection.mrc", 1);
 
         input_image.Resize(4096, 4096, 1, 0.0f);
         padded_reference.CopyFrom(&input_image);
@@ -151,7 +157,7 @@ void GpuUtilTest::TemplateMatchingStandalone(int nThreads, int nGPUs) {
         histogram_min_scaled  = histogram_min / double(sqrt(input_image.logical_x_dimension * input_image.logical_y_dimension));
         histogram_step_scaled = histogram_step / double(sqrt(input_image.logical_x_dimension * input_image.logical_y_dimension));
 
-        GPU[tIDX].Init(this, template_reconstruction, input_image, current_projection,
+        GPU[tIDX].Init(this, template_reconstruction, input_image, current_projection, SCTF_image, SCTF_padded_image,
                        pixel_size_search_range, pixel_size_step, pixel_size,
                        defocus_search_range, defocus_step, defocus1, defocus2,
                        psi_max, psi_start, psi_step,

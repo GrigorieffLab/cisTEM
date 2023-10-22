@@ -796,6 +796,9 @@ void MatchTemplatePanel::StartEstimationClick(wxCommandEvent& event) {
         wxString correlation_std_output_file = main_frame->current_project.template_matching_asset_directory.GetFullPath( );
         correlation_std_output_file += wxString::Format("/%s_std_%i_%i.mrc", current_image->filename.GetName( ), current_image->asset_id, number_of_previous_template_matches);
 
+        wxString mcp_output_file = main_frame->current_project.template_matching_asset_directory.GetFullPath( );
+        mcp_output_file += wxString::Format("/%s_coc_%i_%i.mrc", current_image->filename.GetName( ), current_image->asset_id, number_of_previous_template_matches);
+
         //		wxString correlation_std_output_file = "/dev/null";
         current_orientation_counter = 0;
 
@@ -841,6 +844,7 @@ void MatchTemplatePanel::StartEstimationClick(wxCommandEvent& event) {
         temp_result.projection_result_filename      = output_result_file;
         temp_result.avg_filename                    = correlation_avg_output_file;
         temp_result.std_filename                    = correlation_std_output_file;
+        temp_result.coc_filename                    = mcp_output_file;
 
         cached_results.Add(temp_result);
 
@@ -869,7 +873,7 @@ void MatchTemplatePanel::StartEstimationClick(wxCommandEvent& event) {
 
             //wxPrintf("%i = %i - %i\n", job_counter, first_search_position, last_search_position);
 
-            current_job_package.AddJob("ttffffffffffifffffbfftttttttttftiiiitttfbi", input_search_image.ToUTF8( ).data( ),
+            current_job_package.AddJob("ttffffffffffifffffbfftttttttttftiiiitttfbit", input_search_image.ToUTF8( ).data( ),
                                        input_reconstruction.ToUTF8( ).data( ),
                                        pixel_size,
                                        voltage_kV,
@@ -910,7 +914,8 @@ void MatchTemplatePanel::StartEstimationClick(wxCommandEvent& event) {
                                        output_result_file.ToUTF8( ).data( ),
                                        min_peak_radius,
                                        use_gpu,
-                                       max_threads);
+                                       max_threads,
+                                       mcp_output_file.ToUTF8( ).data( ));
         }
 
         delete current_image_euler_search;

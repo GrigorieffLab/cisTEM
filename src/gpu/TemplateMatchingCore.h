@@ -70,6 +70,8 @@ class TemplateMatchingCore {
     Image template_reconstruction;
     Image current_projection;
     Image input_image; // These will be modified on the host from withing Template Matching Core so Allocate locally
+    Image SCTF_image; // template (S) convolved with CTF
+    Image SCTF_padded_image;
 
     cudaGraph_t     graph;
     cudaGraphExec_t graphExec;
@@ -77,6 +79,7 @@ class TemplateMatchingCore {
 
     // These are assumed to be empty containers at the outset, so xfer host-->device is skipped
     GpuImage d_max_intensity_projection;
+    GpuImage d_max_coc_projection;
     GpuImage d_best_psi;
     GpuImage d_best_phi;
     GpuImage d_best_theta;
@@ -95,6 +98,8 @@ class TemplateMatchingCore {
     GpuImage d_input_image;
     GpuImage d_current_projection;
     GpuImage d_padded_reference;
+    GpuImage d_SCTF_image;
+    GpuImage d_SCTF_padded_image;
 
     // Search range parameters
     float pixel_size_search_range;
@@ -134,15 +139,19 @@ class TemplateMatchingCore {
     __half2* my_stats;
     __half2* my_peaks;
     __half2* my_new_peaks; // for passing euler angles to the callback
-    void     SumPixelWise(GpuImage& image);
-    void     MipPixelWise(__half psi, __half theta, __half phi);
-    void     MipToImage( );
-    void     AccumulateSums(__half2* my_stats, GpuImage& sum, GpuImage& sq_sum);
+    __half2* my_coc2; // 2d CoC (CoC in x,y dimension, can be extended to 5d)
+
+    void SumPixelWise(GpuImage& image);
+    void MipPixelWise(__half psi, __half theta, __half phi);
+    void MipToImage( );
+    void AccumulateSums(__half2* my_stats, GpuImage& sum, GpuImage& sq_sum);
 
     void Init(MyApp*           parent_pointer,
               Image&           template_reconstruction,
               Image&           input_image,
               Image&           current_projection,
+              Image&           SCTF_image,
+              Image&           SCTF_padded_image,
               float            pixel_size_search_range,
               float            pixel_size_step,
               float            pixel_size,

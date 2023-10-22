@@ -2,7 +2,7 @@
 
 #define DO_HISTOGRAM true
 
-__global__ void MipPixelWiseKernel(__half* correlation_output, __half2* my_peaks, const int numel,
+__global__ void MipPixelWiseKernel(__half* correlation_output, __half* coc_output, __half2* my_peaks, __half2* my_coc2, const int numel,
                                    __half psi, __half theta, __half phi, __half2* my_stats, __half2* my_new_peaks);
 
 TemplateMatchingCore::TemplateMatchingCore( ){
@@ -35,6 +35,8 @@ void TemplateMatchingCore::Init(MyApp*           parent_pointer,
                                 Image&           template_reconstruction,
                                 Image&           input_image,
                                 Image&           current_projection,
+                                Image&           SCTF_image,
+                                Image&           SCTF_padded_image,
                                 float            pixel_size_search_range,
                                 float            pixel_size_step,
                                 float            pixel_size,
@@ -72,14 +74,18 @@ void TemplateMatchingCore::Init(MyApp*           parent_pointer,
     this->template_reconstruction.CopyFrom(&template_reconstruction);
     this->input_image.CopyFrom(&input_image);
     this->current_projection.CopyFrom(&current_projection);
+    this->SCTF_image.CopyFrom(&SCTF_image);
 
     d_input_image.Init(this->input_image);
     d_input_image.CopyHostToDevice( );
 
     d_current_projection.Init(this->current_projection);
+    d_SCTF_image.Init(this->SCTF_image);
 
     d_padded_reference.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
+    d_SCTF_padded_image.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
     d_max_intensity_projection.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
+    d_max_coc_projection.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
     d_best_psi.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
     d_best_theta.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
     d_best_phi.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
@@ -120,6 +126,8 @@ void TemplateMatchingCore::RunInnerLoop(Image& projection_filter, float c_pixel,
     d_best_phi.Zeros( );
     d_best_theta.Zeros( );
     d_padded_reference.Zeros( );
+    d_SCTF_padded_image.Zeros( );
+    d_max_coc_projection.Zeros( );
 
     d_sum1.Zeros( );
     d_sumSq1.Zeros( );
@@ -134,13 +142,17 @@ void TemplateMatchingCore::RunInnerLoop(Image& projection_filter, float c_pixel,
 
     // Either do not delete the single precision, or add in a copy here so that each loop over defocus vals
     // have a copy to work with. Otherwise this will not exist on the second loop
-    d_input_image.ConvertToHalfPrecision(false);
-    d_padded_reference.ConvertToHalfPrecision(false);
+    // d_input_image.ConvertToHalfPrecision(false);
+    // d_padded_reference.ConvertToHalfPrecision(false);
+    // d_SCTF_padded_image.ConvertToHalfPrecision(false); // real space
 
     cudaErr(cudaMalloc((void**)&my_peaks, sizeof(__half2) * d_input_image.real_memory_allocated));
     cudaErr(cudaMalloc((void**)&my_new_peaks, sizeof(__half2) * d_input_image.real_memory_allocated));
     cudaErr(cudaMalloc((void**)&my_stats, sizeof(__half2) * d_input_image.real_memory_allocated));
     cudaErr(cudaMemset(my_peaks, 0, sizeof(__half2) * d_input_image.real_memory_allocated));
+    // cudaErr(cudaMemset(my_new_peaks, 0, sizeof(__half2) * d_input_image.real_memory_allocated));
+    cudaErr(cudaMalloc((void**)&my_coc2, sizeof(__half2) * d_input_image.real_memory_allocated));
+    cudaErr(cudaMemset(my_coc2, 0, sizeof(__half2) * d_input_image.real_memory_allocated));
     //	cudaErr(cudaMemset(my_stats,0,sizeof(Peaks)*d_input_image.real_memory_allocated));
 
     cudaEvent_t projection_is_free_Event, gpu_work_is_done_Event;
@@ -151,6 +163,8 @@ void TemplateMatchingCore::RunInnerLoop(Image& projection_filter, float c_pixel,
     int   current_search_position;
     float average_on_edge;
     float average_of_reals;
+    float average_on_edge_SCTF;
+    float average_of_reals_SCTF;
     float temp_float;
 
     int thisDevice;
@@ -177,9 +191,24 @@ void TemplateMatchingCore::RunInnerLoop(Image& projection_filter, float c_pixel,
 
             current_projection.SwapRealSpaceQuadrants( );
             current_projection.MultiplyPixelWise(projection_filter);
+            SCTF_image.CopyFrom(&current_projection);
+
+            // autocorrelation function: SCTF_flipped * SCTF
+            vmcMulByConj(SCTF_image.real_memory_allocated / 2, reinterpret_cast<MKL_Complex8*>(SCTF_image.complex_values), reinterpret_cast<MKL_Complex8*>(SCTF_image.complex_values), reinterpret_cast<MKL_Complex8*>(SCTF_image.complex_values), VML_EP | VML_FTZDAZ_ON | VML_ERRMODE_IGNORE);
+
+            SCTF_image.SwapRealSpaceQuadrants( );
+
+            // disable center flag, make object always in the center
+            SCTF_image.object_is_centred_in_box = true;
+
+            SCTF_image.BackwardFFT( );
+
             current_projection.BackwardFFT( );
-            average_on_edge  = current_projection.ReturnAverageOfRealValuesOnEdges( );
-            average_of_reals = current_projection.ReturnAverageOfRealValues( ) - average_on_edge;
+            average_on_edge      = current_projection.ReturnAverageOfRealValuesOnEdges( );
+            average_on_edge_SCTF = SCTF_image.ReturnAverageOfRealValuesOnEdges( );
+
+            average_of_reals      = current_projection.ReturnAverageOfRealValues( ) - average_on_edge;
+            average_of_reals_SCTF = SCTF_image.ReturnAverageOfRealValues( ) - average_on_edge_SCTF;
 
             // Make sure the device has moved on to the padded projection
             cudaStreamWaitEvent(cudaStreamPerThread, projection_is_free_Event, 0);
@@ -194,18 +223,42 @@ void TemplateMatchingCore::RunInnerLoop(Image& projection_filter, float c_pixel,
 
             d_current_projection.MultiplyByConstant(rsqrtf(d_current_projection.ReturnSumOfSquares( ) / (float)d_padded_reference.number_of_real_space_pixels - (average_of_reals * average_of_reals)));
             d_current_projection.ClipInto(&d_padded_reference, 0, false, 0, 0, 0, 0);
+
+            d_SCTF_image.CopyHostToDevice( );
+
+            d_SCTF_image.AddConstant(-average_on_edge_SCTF);
+            average_of_reals_SCTF *= ((float)d_SCTF_image.number_of_real_space_pixels / (float)d_SCTF_padded_image.number_of_real_space_pixels);
+            d_SCTF_image.MultiplyByConstant(rsqrtf(d_SCTF_image.ReturnSumOfSquares( ) / (float)d_SCTF_padded_image.number_of_real_space_pixels - (average_of_reals_SCTF * average_of_reals_SCTF)));
+
+            d_SCTF_image.ClipInto(&d_SCTF_padded_image, 0, false, 0, 0, 0, 0);
+
             cudaEventRecord(projection_is_free_Event, cudaStreamPerThread);
 
             // For the cpu code (MKL and FFTW) the image is multiplied by N on the forward xform, and subsequently normalized by 1/N
             // cuFFT multiplies by 1/root(N) forward and then 1/root(N) on the inverse. The input image is done on the cpu, and so has no scaling.
             // Stating false on the forward FFT leaves the ref = ref*root(N). Then we have root(N)*ref*input * root(N) (on the inverse) so we need a factor of 1/N to come out proper. This is included in BackwardFFTAfterComplexConjMul
-            d_padded_reference.ForwardFFT(false);
+            d_padded_reference.ForwardFFT( );
+            d_SCTF_padded_image.ForwardFFT( );
+            d_SCTF_padded_image.MultiplyByConstant(sqrtf(float(d_SCTF_padded_image.number_of_real_space_pixels)));
+            d_SCTF_padded_image.SwapRealSpaceQuadrants( );
 
             //      d_padded_reference.ForwardFFTAndClipInto(d_current_projection,false);
-            d_padded_reference.BackwardFFTAfterComplexConjMul(d_input_image.complex_values_16f, true);
+            // d_padded_reference.BackwardFFTAfterComplexConjMul(d_input_image.complex_values_fp16, true);
+            d_padded_reference.MultiplyPixelWiseComplexConjugate(d_input_image);
+            d_SCTF_padded_image.MultiplyPixelWiseComplexConjugate(d_padded_reference); // TOCHECKME
+            d_SCTF_padded_image.BackwardFFT( );
+            d_padded_reference.BackwardFFT( );
 
-            //			d_padded_reference.BackwardFFTAfterComplexConjMul(d_input_image.complex_values_gpu, false);
-            //			d_padded_reference.ConvertToHalfPrecision(false);
+            // debug
+            //   d_padded_reference.QuickAndDirtyWriteSlices("d_cc.mrc", 1, 1);
+            //   d_SCTF_padded_image.QuickAndDirtyWriteSlices("d_coc.mrc", 1, 1);
+            //   exit(0);
+
+            d_SCTF_padded_image.ConvertToHalfPrecision(false);
+            d_padded_reference.ConvertToHalfPrecision(false);
+
+            //			d_padded_reference.BackwardFFTAfterComplexConjMul(d_input_image.complex_values, false);
+            //			d_padded_reference.CopyFP32toFP16buffer(false);
 
             if ( DO_HISTOGRAM ) {
                 if ( ! histogram.is_allocated_histogram ) {
@@ -268,8 +321,10 @@ void TemplateMatchingCore::RunInnerLoop(Image& projection_filter, float c_pixel,
                 d_sumSq2.Zeros( );
             }
 
-            current_projection.is_in_real_space = false;
-            d_padded_reference.is_in_real_space = true;
+            current_projection.is_in_real_space  = false;
+            SCTF_image.is_in_real_space          = false;
+            d_padded_reference.is_in_real_space  = true;
+            d_SCTF_padded_image.is_in_real_space = true;
             //			d_padded_reference.Zeros();
             cudaEventRecord(gpu_work_is_done_Event, cudaStreamPerThread);
 
@@ -313,6 +368,7 @@ void TemplateMatchingCore::RunInnerLoop(Image& projection_filter, float c_pixel,
     cudaErr(cudaStreamSynchronize(cudaStreamPerThread));
 
     cudaErr(cudaFree(my_peaks));
+    cudaErr(cudaFree(my_coc2));
     cudaErr(cudaFree(my_stats));
     cudaErr(cudaFree(my_new_peaks));
 }
@@ -324,11 +380,11 @@ void TemplateMatchingCore::MipPixelWise(__half psi, __half theta, __half phi) {
             // N*
             d_padded_reference.ReturnLaunchParamtersLimitSMs(5.f, 1024);
 
-    MipPixelWiseKernel<<<d_padded_reference.gridDims, d_padded_reference.threadsPerBlock, 0, cudaStreamPerThread>>>((__half*)d_padded_reference.real_values_16f, my_peaks, (int)d_padded_reference.real_memory_allocated, psi, theta, phi, my_stats, my_new_peaks);
+    MipPixelWiseKernel<<<d_padded_reference.gridDims, d_padded_reference.threadsPerBlock, 0, cudaStreamPerThread>>>((__half*)d_padded_reference.real_values_16f, (__half*)d_SCTF_padded_image.real_values_16f, my_peaks, my_coc2, (int)d_padded_reference.real_memory_allocated, psi, theta, phi, my_stats, my_new_peaks);
     postcheck
 }
 
-__global__ void MipPixelWiseKernel(__half* correlation_output, __half2* my_peaks, const int numel,
+__global__ void MipPixelWiseKernel(__half* correlation_output, __half* coc_output, __half2* my_peaks, __half2* my_coc2, const int numel,
                                    __half psi, __half theta, __half phi, __half2* my_stats, __half2* my_new_peaks) {
 
     //	Peaks tmp_peak;
@@ -336,6 +392,7 @@ __global__ void MipPixelWiseKernel(__half* correlation_output, __half2* my_peaks
     for ( int i = blockIdx.x * blockDim.x + threadIdx.x; i < numel; i += blockDim.x * gridDim.x ) {
 
         const __half  half_val = correlation_output[i];
+        const __half  half_coc = coc_output[i];
         const __half2 input    = __half2half2(half_val * __half(10000.0));
         const __half2 mulVal   = __halves2half2((__half)1.0, half_val);
         //    	my_stats[i].sum = __hadd(my_stats[i].sum, half_val);
@@ -351,6 +408,7 @@ __global__ void MipPixelWiseKernel(__half* correlation_output, __half2* my_peaks
             //				tmp_peak.mip = half_val;
             my_peaks[i]     = __halves2half2(half_val, psi);
             my_new_peaks[i] = __halves2half2(theta, phi);
+            my_coc2[i]      = __halves2half2(half_coc, 0.0);
 
             //				my_peaks[i].mip = correlation_output[i];
             //				my_peaks[i].psi = psi;
@@ -361,7 +419,7 @@ __global__ void MipPixelWiseKernel(__half* correlation_output, __half2* my_peaks
     //
 }
 
-__global__ void MipToImageKernel(const __half2*, const __half2* my_new_peaks, const int, cufftReal*, cufftReal*, cufftReal*, cufftReal*);
+__global__ void MipToImageKernel(const __half2*, const __half2* my_new_peaks, const __half2*, const int, cufftReal*, cufftReal*, cufftReal*, cufftReal*, cufftReal*);
 
 void TemplateMatchingCore::MipToImage( ) {
 
@@ -369,12 +427,12 @@ void TemplateMatchingCore::MipToImage( ) {
             dim3 threadsPerBlock = dim3(1024, 1, 1);
     dim3         gridDims        = dim3((d_max_intensity_projection.real_memory_allocated + threadsPerBlock.x - 1) / threadsPerBlock.x, 1, 1);
 
-    MipToImageKernel<<<gridDims, threadsPerBlock, 0, cudaStreamPerThread>>>(my_peaks, my_new_peaks, d_max_intensity_projection.real_memory_allocated,
-                                                                            d_max_intensity_projection.real_values_gpu, d_best_psi.real_values_gpu, d_best_theta.real_values_gpu, d_best_phi.real_values_gpu);
+    MipToImageKernel<<<gridDims, threadsPerBlock, 0, cudaStreamPerThread>>>(my_peaks, my_new_peaks, my_coc2, d_max_intensity_projection.real_memory_allocated,
+                                                                            d_max_intensity_projection.real_values_gpu, d_best_psi.real_values_gpu, d_best_theta.real_values_gpu, d_best_phi.real_values_gpu, d_max_coc_projection.real_values_gpu);
     postcheck
 }
 
-__global__ void MipToImageKernel(const __half2* my_peaks, const __half2* my_new_peaks, const int numel, cufftReal* mip, cufftReal* psi, cufftReal* theta, cufftReal* phi) {
+__global__ void MipToImageKernel(const __half2* my_peaks, const __half2* my_new_peaks, const __half2* my_coc2, const int numel, cufftReal* mip, cufftReal* psi, cufftReal* theta, cufftReal* phi, cufftReal* mcp) {
 
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -384,6 +442,7 @@ __global__ void MipToImageKernel(const __half2* my_peaks, const __half2* my_new_
         psi[x]   = (cufftReal)__high2float(my_peaks[x]);
         theta[x] = (cufftReal)__low2float(my_new_peaks[x]);
         phi[x]   = (cufftReal)__high2float(my_new_peaks[x]);
+        mcp[x]   = (cufftReal)__low2float(my_coc2[x]);
     }
 }
 
