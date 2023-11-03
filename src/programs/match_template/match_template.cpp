@@ -688,7 +688,7 @@ bool MatchTemplateApp::DoCalculation( ) {
     whitening_filter.MultiplyByConstant(1.0f / whitening_filter.ReturnMaximumValue( ));
 
     //whitening_filter.WriteToFile("/tmp/filter.txt");
-    //input_image.ApplyCurveFilter(&whitening_filter);
+    input_image.ApplyCurveFilter(&whitening_filter);
     input_image.ZeroCentralPixel( );
     input_image.DivideByConstant(sqrtf(input_image.ReturnSumOfSquares( )));
     //input_image.QuickAndDirtyWriteSlice("/tmp/white.mrc", 1);
@@ -847,7 +847,7 @@ bool MatchTemplateApp::DoCalculation( ) {
             input_ctf.SetDefocus((defocus1 + float(defocus_i) * defocus_step) / pixel_size, (defocus2 + float(defocus_i) * defocus_step) / pixel_size, deg_2_rad(defocus_angle));
             //            input_ctf.SetDefocus((defocus1 + 200) / pixel_size, (defocus2 + 200) / pixel_size, deg_2_rad(defocus_angle));
             projection_filter.CalculateCTFImage(input_ctf);
-            //projection_filter.ApplyCurveFilter(&whitening_filter);
+            projection_filter.ApplyCurveFilter(&whitening_filter);
 
             //            projection_filter.QuickAndDirtyWriteSlices("/tmp/projection_filter.mrc",1,projection_filter.logical_z_dimension,true,1.5);
             if ( use_gpu ) {
