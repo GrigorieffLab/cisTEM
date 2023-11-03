@@ -72,6 +72,8 @@ class TemplateMatchingCore {
     Image input_image; // These will be modified on the host from withing Template Matching Core so Allocate locally
     Image SCTF_image; // template (S) convolved with CTF
     Image SCTF_padded_image;
+    Image padded_reference;
+    Image normalized_cc;
 
     cudaGraph_t     graph;
     cudaGraphExec_t graphExec;
@@ -98,6 +100,7 @@ class TemplateMatchingCore {
     GpuImage d_input_image;
     GpuImage d_current_projection;
     GpuImage d_padded_reference;
+    GpuImage d_padded_reference_scaled;
     GpuImage d_SCTF_image;
     GpuImage d_SCTF_padded_image;
 
@@ -152,6 +155,8 @@ class TemplateMatchingCore {
               Image&           current_projection,
               Image&           SCTF_image,
               Image&           SCTF_padded_image,
+              Image&           padded_reference,
+              Image&           normalized_cc,
               float            pixel_size_search_range,
               float            pixel_size_step,
               float            pixel_size,

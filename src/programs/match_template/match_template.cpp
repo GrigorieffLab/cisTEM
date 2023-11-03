@@ -467,6 +467,7 @@ bool MatchTemplateApp::DoCalculation( ) {
     Image template_reconstruction;
     Image current_projection;
     Image padded_projection;
+    Image normalized_cc;
 
     Image projection_filter;
 
@@ -574,6 +575,7 @@ bool MatchTemplateApp::DoCalculation( ) {
     }
 
     padded_reference.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
+    normalized_cc.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
     SCTF_padded_image.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
     max_intensity_projection.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
     max_coc_projection.Allocate(input_image.logical_x_dimension, input_image.logical_y_dimension, 1);
@@ -588,6 +590,7 @@ bool MatchTemplateApp::DoCalculation( ) {
     double* correlation_pixel_sum_of_squares = new double[input_image.real_memory_allocated];
 
     padded_reference.SetToConstant(0.0f);
+    normalized_cc.SetToConstant(0.0f);
     SCTF_padded_image.SetToConstant(0.0f);
     max_intensity_projection.SetToConstant(-FLT_MAX);
     max_coc_projection.SetToConstant(-FLT_MAX);
@@ -819,7 +822,7 @@ bool MatchTemplateApp::DoCalculation( ) {
                     if ( tIDX == (max_threads - 1) )
                         t_last_search_position = maxPos;
 
-                    GPU[tIDX].Init(this, template_reconstruction, input_image, current_projection, SCTF_image, SCTF_padded_image,
+                    GPU[tIDX].Init(this, template_reconstruction, input_image, current_projection, SCTF_image, SCTF_padded_image, padded_reference, normalized_cc,
                                    pixel_size_search_range, pixel_size_step, pixel_size,
                                    defocus_search_range, defocus_step, defocus1, defocus2,
                                    psi_max, psi_start, psi_step,

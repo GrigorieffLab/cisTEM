@@ -37,6 +37,8 @@ void TemplateMatchingCore::Init(MyApp*           parent_pointer,
                                 Image&           current_projection,
                                 Image&           SCTF_image,
                                 Image&           SCTF_padded_image,
+                                Image&           padded_reference,
+                                Image&           normalized_cc,
                                 float            pixel_size_search_range,
                                 float            pixel_size_step,
                                 float            pixel_size,
@@ -75,6 +77,8 @@ void TemplateMatchingCore::Init(MyApp*           parent_pointer,
     this->input_image.CopyFrom(&input_image);
     this->current_projection.CopyFrom(&current_projection);
     this->SCTF_image.CopyFrom(&SCTF_image);
+    this->padded_reference.CopyFrom(&padded_reference);
+    this->normalized_cc.CopyFrom(&normalized_cc);
 
     d_input_image.Init(this->input_image);
     d_input_image.CopyHostToDevice( );
@@ -82,7 +86,10 @@ void TemplateMatchingCore::Init(MyApp*           parent_pointer,
     d_current_projection.Init(this->current_projection);
     d_SCTF_image.Init(this->SCTF_image);
 
-    d_padded_reference.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
+    d_padded_reference.Init(this->padded_reference);
+    d_padded_reference_scaled.Init(this->normalized_cc);
+
+    //d_padded_reference.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
     d_SCTF_padded_image.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
     d_max_intensity_projection.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
     d_max_coc_projection.Allocate(d_input_image.dims.x, d_input_image.dims.y, d_input_image.dims.z, true);
@@ -128,6 +135,7 @@ void TemplateMatchingCore::RunInnerLoop(Image& projection_filter, float c_pixel,
     d_padded_reference.Zeros( );
     d_SCTF_padded_image.Zeros( );
     d_max_coc_projection.Zeros( );
+    d_padded_reference_scaled.Zeros( );
 
     d_sum1.Zeros( );
     d_sumSq1.Zeros( );
@@ -215,6 +223,8 @@ void TemplateMatchingCore::RunInnerLoop(Image& projection_filter, float c_pixel,
 
             //// TO THE GPU ////
             d_current_projection.CopyHostToDevice( );
+            d_padded_reference.CopyHostToDevice( );
+            d_padded_reference_scaled.CopyHostToDevice( );
 
             d_current_projection.AddConstant(-average_on_edge);
 
@@ -237,22 +247,31 @@ void TemplateMatchingCore::RunInnerLoop(Image& projection_filter, float c_pixel,
             // For the cpu code (MKL and FFTW) the image is multiplied by N on the forward xform, and subsequently normalized by 1/N
             // cuFFT multiplies by 1/root(N) forward and then 1/root(N) on the inverse. The input image is done on the cpu, and so has no scaling.
             // Stating false on the forward FFT leaves the ref = ref*root(N). Then we have root(N)*ref*input * root(N) (on the inverse) so we need a factor of 1/N to come out proper. This is included in BackwardFFTAfterComplexConjMul
-            d_padded_reference.ForwardFFT( );
+
             d_SCTF_padded_image.ForwardFFT( );
-            d_SCTF_padded_image.MultiplyByConstant(sqrtf(float(d_SCTF_padded_image.number_of_real_space_pixels)));
+            //d_SCTF_padded_image.MultiplyByConstant(sqrtf(float(d_SCTF_padded_image.number_of_real_space_pixels)));
             d_SCTF_padded_image.SwapRealSpaceQuadrants( );
 
             //      d_padded_reference.ForwardFFTAndClipInto(d_current_projection,false);
             // d_padded_reference.BackwardFFTAfterComplexConjMul(d_input_image.complex_values_fp16, true);
+            d_padded_reference.ForwardFFT( );
             d_padded_reference.MultiplyPixelWiseComplexConjugate(d_input_image);
-            d_SCTF_padded_image.MultiplyPixelWiseComplexConjugate(d_padded_reference); // TOCHECKME
-            d_SCTF_padded_image.BackwardFFT( );
             d_padded_reference.BackwardFFT( );
+            d_padded_reference_scaled.CopyFrom(&d_padded_reference);
+            // scale cc
+            d_padded_reference_scaled.AddConstant(-d_padded_reference_scaled.ReturnSumOfRealValues( ) / float(d_padded_reference_scaled.number_of_real_space_pixels));
+            d_padded_reference_scaled.MultiplyByConstant(1 / sqrt(d_padded_reference_scaled.ReturnSumOfSquares( ) / float(d_padded_reference_scaled.number_of_real_space_pixels)));
+            d_padded_reference_scaled.ForwardFFT( );
+
+            d_SCTF_padded_image.MultiplyPixelWiseComplexConjugate(d_padded_reference_scaled); // TOCHECKME
+            d_SCTF_padded_image.BackwardFFT( );
+            d_padded_reference_scaled.BackwardFFT( );
 
             // debug
-            //   d_padded_reference.QuickAndDirtyWriteSlices("d_cc.mrc", 1, 1);
-            //   d_SCTF_padded_image.QuickAndDirtyWriteSlices("d_coc.mrc", 1, 1);
-            //   exit(0);
+            //d_padded_reference.QuickAndDirtyWriteSlices("d_cc0_new.mrc", 1, 1);
+            //d_SCTF_padded_image.QuickAndDirtyWriteSlices("d_coc_new.mrc", 1, 1);
+            //d_padded_reference_scaled.QuickAndDirtyWriteSlices("d_cc_scaled_new.mrc", 1, 1);
+            //exit(0);
 
             d_SCTF_padded_image.ConvertToHalfPrecision(false);
             d_padded_reference.ConvertToHalfPrecision(false);
@@ -325,6 +344,7 @@ void TemplateMatchingCore::RunInnerLoop(Image& projection_filter, float c_pixel,
             SCTF_image.is_in_real_space          = false;
             d_padded_reference.is_in_real_space  = true;
             d_SCTF_padded_image.is_in_real_space = true;
+            d_padded_reference_scaled.is_in_real_space = true;
             //			d_padded_reference.Zeros();
             cudaEventRecord(gpu_work_is_done_Event, cudaStreamPerThread);
 
