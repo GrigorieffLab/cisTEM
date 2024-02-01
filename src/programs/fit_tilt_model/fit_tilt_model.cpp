@@ -18,11 +18,12 @@ void FitTiltModel::DoInteractiveUserInput( ) {
     std::string rawtlt_file = "";
     std::string output_path = "";
     float       tem_axis_angle;
-    input_file     = my_input->GetFilenameFromUser("txt file containing ctffind tilt angle and axis direction", "second column is tilt angle and thrid column is axis direction", "TiltAngle_AxisDirction", false);
-    rawtlt_file    = my_input->GetFilenameFromUser("tlt file containing the raw tilt values", "one column storing tilt angle", "rawtlt.tlt", false);
-    tem_axis_angle = my_input->GetFloatFromUser("axis direction ", "the axis direction of the microscope", "178.4", 0.0);
-    output_path    = my_input->GetFilenameFromUser("path to the output files", "/outpath/", "/data/output/", false);
-    my_current_job.ManualSetArguments("ttft", input_file.c_str( ), rawtlt_file.c_str( ), tem_axis_angle, output_path.c_str( ));
+    input_file  = my_input->GetFilenameFromUser("txt file containing ctffind tilt angle and axis direction", "second column is tilt angle and thrid column is axis direction", "TiltAngle_AxisDirction", false);
+    rawtlt_file = my_input->GetFilenameFromUser("tlt file containing the raw tilt values", "one column storing tilt angle", "rawtlt.tlt", false);
+    // tem_axis_angle = my_input->GetFloatFromUser("axis direction ", "the axis direction of the microscope", "178.4", 0.0);
+    output_path = my_input->GetFilenameFromUser("path to the output files", "/outpath/", "/data/output/", false);
+    // my_current_job.ManualSetArguments("ttft", input_file.c_str( ), rawtlt_file.c_str( ), tem_axis_angle, output_path.c_str( ));
+    my_current_job.ManualSetArguments("ttt", input_file.c_str( ), rawtlt_file.c_str( ), output_path.c_str( ));
 };
 
 using namespace std;
@@ -121,8 +122,8 @@ double optim_function(void* pt2Object, double values[]) {
 bool FitTiltModel::DoCalculation( ) {
     const std::string input_filename = my_current_job.arguments[0].ReturnStringArgument( );
     const std::string rawtltfile     = my_current_job.arguments[1].ReturnStringArgument( );
-    float             input_tem_axis = my_current_job.arguments[2].ReturnFloatArgument( );
-    const std::string outpath        = my_current_job.arguments[3].ReturnStringArgument( );
+    // float             input_tem_axis = my_current_job.arguments[2].ReturnFloatArgument( );
+    const std::string outpath = my_current_job.arguments[2].ReturnStringArgument( );
 
     int*   index;
     double fitted_phi_zero, fitted_theta_zero, fitted_phi_tem;
@@ -136,9 +137,9 @@ bool FitTiltModel::DoCalculation( ) {
     NumericTextFile                   rawtlt(rawtltfile, OPEN_TO_READ, 1);
 
     // Read Inputs
-    wxPrintf("read txt file by numeric txtfile\n");
+    // wxPrintf("read txt file by numeric txtfile\n");
     image_no = inputfile.number_of_lines;
-    wxPrintf("number of tilts: %d\n", image_no);
+    wxPrintf("\nnumber of tilts: %d\n", image_no);
     float temp_array[3];
 
     index    = new int[image_no];
@@ -163,12 +164,12 @@ bool FitTiltModel::DoCalculation( ) {
     ranges[0] = 0.0f;
     ranges[1] = 180.0f;
     ranges[2] = 180.0f;
-    ranges[3] = 0.00f;
+    ranges[3] = 180.00f;
 
     start_values[0] = 0.0f;
     start_values[2] = 10;
     start_values[3] = 178.4f;
-    start_values[3] = input_tem_axis;
+    start_values[3] = 145;
     start_values[1] = start_values[3];
 
     simplex_minimzer.SetIinitalValues(start_values, ranges);
@@ -192,15 +193,12 @@ bool FitTiltModel::DoCalculation( ) {
     simplex_minimzer.MinimizeFunction(this, optim_function);
     simplex_minimzer.GetMinimizedValues(min_values);
 
-    wxPrintf("\nfitted result: phi_zero, theta_zero, phi_tem\n");
-    wxPrintf(" %f, %f, %f\n", min_values[1], min_values[2], min_values[3]);
-
     fitted_phi_zero   = min_values[1];
     fitted_theta_zero = min_values[2];
     fitted_phi_tem    = min_values[3];
 
-    if ( abs(fitted_phi_zero - input_tem_axis) > 145 ) {
-        if ( fitted_phi_zero > input_tem_axis ) {
+    if ( abs(fitted_phi_zero - fitted_phi_tem) > 145 ) {
+        if ( fitted_phi_zero > fitted_phi_tem ) {
             fitted_phi_zero -= 180;
             fitted_theta_zero *= -1;
         }
@@ -210,11 +208,11 @@ bool FitTiltModel::DoCalculation( ) {
         }
     }
 
-    wxPrintf("\nadjusted fitted result: phi_zero, theta_zero, phi_tem\n");
-    wxPrintf(" %f, %f, %f\n", fitted_phi_zero, fitted_theta_zero, fitted_phi_tem);
+    wxPrintf("\nfitted parameters:\n axis_angle\t pretilt\t stage_tilt_axis\n");
+    wxPrintf(" %.2f, \t%.2f, \t%.2f\n", fitted_phi_zero, fitted_theta_zero, fitted_phi_tem);
 
     rmse = optim_function(this, min_values);
-    wxPrintf("rmse is %f\n", rmse);
+    wxPrintf("\nRMSE: %f\n", rmse);
 
     zero_rot = CTFRotationMatrix(fitted_phi_zero, fitted_theta_zero);
 
@@ -229,23 +227,17 @@ bool FitTiltModel::DoCalculation( ) {
         MatrixToAngleZXZ(exp_rot[image_ind], &exp_theta[image_ind], &exp_phi[image_ind]);
     }
 
-    // save results to files :
-    wxPrintf("\nfitted tilt and axis direction\n");
-    for ( int image_ind = 0; image_ind < image_no; image_ind++ ) {
-        wxPrintf("%d %f %f\n", image_ind, exp_theta[image_ind], exp_phi[image_ind]);
-    }
-
-    wxPrintf("\noutlier indexes: ");
+    wxPrintf("\noutlier indexes: \n");
     NumericTextFile OutlierIndexFile(outpath + "outlier_index.txt", OPEN_TO_WRITE, 1);
     if ( outlier_indexes.size( ) == 0 ) {
-        wxPrintf("\n--- all data pairs were used for fitting, no outliers --- \n");
+        wxPrintf("--- all data pairs were used for fitting, no outliers --- \n\n");
     }
     else {
         for ( float value : outlier_indexes ) {
-            wxPrintf("%f\t", value);
+            wxPrintf("%d\t", int(value));
             OutlierIndexFile.WriteLine(&value);
         }
-        wxPrintf("\n");
+        wxPrintf("\n\n");
     }
     OutlierIndexFile.Close( );
 
@@ -256,8 +248,8 @@ bool FitTiltModel::DoCalculation( ) {
     outputfile.WriteLine(temp_array);
     outputfile.Close( );
 
-    range_adjust_for_plot(exp_theta, exp_phi, input_tem_axis);
-    range_adjust_for_plot(ctffind_theta, ctffind_phi, input_tem_axis);
+    range_adjust_for_plot(exp_theta, exp_phi, fitted_phi_tem);
+    range_adjust_for_plot(ctffind_theta, ctffind_phi, fitted_phi_tem);
 
     NumericTextFile outputangle(outpath + "fitted_tilt_and_axis_angle.txt", OPEN_TO_WRITE, 3);
     for ( int i = 0; i < image_no; i++ ) {
@@ -287,8 +279,10 @@ bool FitTiltModel::DoCalculation( ) {
     int              count         = 0;
     int              outlier_count = 0;
     std::vector<int> excluded_index;
+
+    wxPrintf("\nfitted result and ctffind5 (counter clock wise):\n index\t fitted_tilt\t fitted_axis\t ctffind5_tilt\t ctffind5_axis\n");
     for ( int i = 0; i < image_no; i++ ) {
-        wxPrintf("%d %f %f %d %f %f\n", i, exp_theta[i], exp_phi[i], i, ctffind_theta[i], ctffind_phi[i]);
+        wxPrintf("%d\t %.2f\t\t %.2f\t\t %.2f\t\t %.2f\n", i, exp_theta[i], exp_phi[i], ctffind_theta[i], ctffind_phi[i]);
         temp_array[0] = index[i];
         temp_array[1] = abs(exp_theta[i] - ctffind_theta[i]);
         temp_array[2] = abs(exp_phi[i] - ctffind_phi[i]);
@@ -311,7 +305,7 @@ bool FitTiltModel::DoCalculation( ) {
 
     NumericTextFile excludedpointindex(outpath + "abs_error_excluded_index.txt", OPEN_TO_WRITE, 1);
     for ( float value : excluded_index ) {
-        wxPrintf("%f\t", value);
+        // wxPrintf("%f\t", value);
         excludedpointindex.WriteLine(&value);
     }
     excludedpointindex.Close( );
@@ -323,7 +317,12 @@ bool FitTiltModel::DoCalculation( ) {
     wxPrintf("\n");
     mean_theta_error = sum_theta_error / count;
     mean_phi_error   = sum_phi_error / count;
-    wxPrintf("\nthe mean abs error for theta and phi are: %f %f \n", mean_theta_error, mean_phi_error);
+    wxPrintf("\nthe mean abs error for theta and phi are:\n %f\t %f \n\n", mean_theta_error, mean_phi_error);
+
+    NumericTextFile meanabserror(outpath + "mean_abs_error_exclude_center_tilts.txt", OPEN_TO_WRITE, 1);
+    meanabserror.WriteLine(&mean_theta_error);
+    meanabserror.WriteLine(&mean_phi_error);
+    meanabserror.Close( );
 
     delete[] index;
     delete[] raw_tilt;

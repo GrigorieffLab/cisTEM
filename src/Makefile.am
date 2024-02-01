@@ -392,7 +392,7 @@ ctffind_CXXFLAGS = $(WX_CPPFLAGS_BASE)
 ctffind_CPPFLAGS = $(WX_CPPFLAGS_BASE)
 ctffind_LDADD = libcore.a $(WX_LIBS_BASE)
 
-fit_tilt_model_SOURCES = programs/ctffind/fit_tilt_model.cpp 
+fit_tilt_model_SOURCES = programs/fit_tilt_model/fit_tilt_model.cpp 
 fit_tilt_model_CXXFLAGS = $(WX_CPPFLAGS_BASE)
 fit_tilt_model_CPPFLAGS = $(WX_CPPFLAGS_BASE)
 fit_tilt_model_LDADD = libcore.a $(WX_LIBS_BASE)
