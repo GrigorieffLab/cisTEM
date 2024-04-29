@@ -322,6 +322,7 @@ bin_PROGRAMS =  cisTEM_job_control \
                 match_template \
                 refine_template \
                 make_template_result \
+                make_template_result_dev \
                 prepare_stack_matchtemplate \
                 sum_all_eer_files \
                 measure_template_bias
@@ -985,6 +986,11 @@ make_template_result_CXXFLAGS = $(WX_CPPFLAGS_BASE)
 make_template_result_CPPFLAGS = $(WX_CPPFLAGS_BASE)
 
 make_template_result_LDADD    = libcore.a $(WX_LIBS_BASE)
+
+make_template_result_dev_SOURCES  = programs/make_template_result_dev/make_template_result_dev.cpp
+make_template_result_dev_CXXFLAGS = $(WX_CPPFLAGS_BASE)
+make_template_result_dev_CPPFLAGS = $(WX_CPPFLAGS_BASE)
+make_template_result_dev_LDADD    = libcore.a $(WX_LIBS_BASE)
 
 simulate_SOURCES  =  programs/simulate/simulate.cpp programs/simulate/wave_function_propagator.cpp 
 simulate_CXXFLAGS = $(WX_CPPFLAGS_BASE)
