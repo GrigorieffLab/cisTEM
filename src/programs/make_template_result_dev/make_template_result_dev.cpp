@@ -104,8 +104,8 @@ bool MakeTemplateResultDev::DoCalculation( ) {
     long  address;
     long  text_file_access_type;
 
-    float coordinates[8];
-    //vector<pair<int, int>> localMaxima;
+    float                          coordinates[8];
+    vector<tuple<float, int, int>> localMaxima; // Peak, Row, Column
 
     text_file_access_type = OPEN_TO_WRITE;
     NumericTextFile coordinate_file(xyz_coords_filename, text_file_access_type, 8);
@@ -129,7 +129,7 @@ bool MakeTemplateResultDev::DoCalculation( ) {
 
     wxPrintf("\n");
 
-    int pixel_counter = 0;
+    // int pixel_counter = 0;
     for ( int i = ignore_N_pixels_from_the_border; i <= mip_x_dimension - ignore_N_pixels_from_the_border; i++ ) {
         for ( int j = ignore_N_pixels_from_the_border; j <= mip_y_dimension - ignore_N_pixels_from_the_border; j++ ) {
 
@@ -153,33 +153,37 @@ bool MakeTemplateResultDev::DoCalculation( ) {
             }
 
             if ( isLocalMax && maxVal == scaled_mip_image.ReturnRealPixelFromPhysicalCoord(i, j, 0) ) {
-                //wxPrintf("local max @ %i %i = %f\n", i, j, maxVal);
-                // localMaxima.push_back(make_pair(i, j));
+                localMaxima.emplace_back(maxVal, i, j);
                 // write into output coordinates
-
-                coordinates[0] = psi_image.ReturnRealPixelFromPhysicalCoord(i, j, 0);
-                coordinates[1] = theta_image.ReturnRealPixelFromPhysicalCoord(i, j, 0);
-                coordinates[2] = phi_image.ReturnRealPixelFromPhysicalCoord(i, j, 0);
-                coordinates[3] = i * pixel_size;
-                coordinates[4] = j * pixel_size;
-                coordinates[5] = defocus_image.ReturnRealPixelFromPhysicalCoord(i, j, 0);
-                coordinates[6] = pixel_size_image.ReturnRealPixelFromPhysicalCoord(i, j, 0);
-                coordinates[7] = maxVal;
-                coordinate_file.WriteLine(coordinates);
 
                 number_of_peaks_found++;
             }
 
-            pixel_counter++;
-
-            //  wxPrintf("Peak %4i at x, y, psi, theta, phi, defocus, pixel size = %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f, %12.6f : %10.6f\n", number_of_peaks_found, current_peak.x * pixel_size, current_peak.y * pixel_size, current_psi, current_theta, current_phi, current_defocus, current_pixel_size, current_peak.value);
+            //pixel_counter++;
         }
-        pixel_counter += scaled_mip_image.padding_jump_value;
+        //pixel_counter += scaled_mip_image.padding_jump_value;
     }
 
-    // for ( const auto& pos : localMaxima ) {
-    //     wxPrintf("%i %i = %f\n", pos.first, pos.second, scaled_mip_image.ReturnRealPixelFromPhysicalCoord(pos.first, pos.second, 0));
-    // }
+    // Sort based on the local maxima values (descending order)
+    sort(localMaxima.begin( ), localMaxima.end( ), [](const tuple<float, int, int>& a, const tuple<float, int, int>& b) {
+        return get<0>(a) > get<0>(b); // Sorting by first element of tuple, which is the max value
+    });
+
+    int coord_x, coord_y;
+    for ( const auto& entry : localMaxima ) {
+        coord_x = get<1>(entry);
+        coord_y = get<2>(entry);
+
+        coordinates[0] = psi_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0);
+        coordinates[1] = theta_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0);
+        coordinates[2] = phi_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0);
+        coordinates[3] = coord_x * pixel_size;
+        coordinates[4] = coord_y * pixel_size;
+        coordinates[5] = defocus_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0);
+        coordinates[6] = pixel_size_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0);
+        coordinates[7] = get<0>(entry);
+        coordinate_file.WriteLine(coordinates);
+    }
 
     if ( is_running_locally == true ) {
         wxPrintf("\nFound %i peaks.\n\n", number_of_peaks_found);
