@@ -315,25 +315,62 @@ bool MakeTemplateResultDev::DoCalculation( ) {
     auto neg_log_p1q_ = Calculate1QPValue(pro_zscores, pro_snrs, Dinv_, Uinv__);
 
     int coord_x, coord_y;
+    // write cisTEM star output
+    cisTEMParameters output_params;
+    output_params.parameters_to_write.SetActiveParameters(PSI | THETA | PHI | ORIGINAL_X_POSITION | ORIGINAL_Y_POSITION | DEFOCUS_1 | DEFOCUS_2 | DEFOCUS_ANGLE | SCORE | MICROSCOPE_VOLTAGE | MICROSCOPE_CS | AMPLITUDE_CONTRAST | BEAM_TILT_X | BEAM_TILT_Y | IMAGE_SHIFT_X | IMAGE_SHIFT_Y | ORIGINAL_IMAGE_FILENAME | PIXEL_SIZE);
+    output_params.PreallocateMemoryAndBlank(localMaxima.size( ));
+
     for ( int rowId = 0; rowId < localMaxima.size( ); ++rowId ) {
         coordinates.clear( ); // efficient for reusing vector
-        auto& current_peak = localMaxima[rowId];
-        coord_x            = get<1>(current_peak);
-        coord_y            = get<2>(current_peak);
-        coordinates.push_back(psi_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0));
-        coordinates.push_back(theta_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0));
-        coordinates.push_back(phi_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0));
+        auto& current_peak       = localMaxima[rowId];
+        coord_x                  = get<1>(current_peak);
+        coord_y                  = get<2>(current_peak);
+        float current_psi        = psi_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0);
+        float current_theta      = theta_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0);
+        float current_phi        = phi_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0);
+        float current_defocus    = defocus_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0); // FIXME what to do with defocus
+        float current_pixel_size = pixel_size_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0); // FIXME what to do with pixel size
+        coordinates.push_back(current_psi);
+        coordinates.push_back(current_theta);
+        coordinates.push_back(current_phi);
         coordinates.push_back(coord_x * pixel_size);
         coordinates.push_back(coord_y * pixel_size);
-        coordinates.push_back(defocus_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0));
-        coordinates.push_back(pixel_size_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0));
+        coordinates.push_back(current_defocus);
+        coordinates.push_back(current_pixel_size);
         coordinates.push_back(get<0>(current_peak)); // z-score
         coordinates.push_back(get<3>(current_peak)); // SNR
         coordinates.push_back(neg_log_p1q_[rowId]); // neg log p-value
 
         // optional coordinate_file length
         coordinate_file.WriteLine(coordinates.data( ));
+
+        //    output_params.parameters_to_write.SetActiveParameters(PSI | THETA | PHI | ORIGINAL_X_POSITION | ORIGINAL_Y_POSITION | DEFOCUS_1 | DEFOCUS_2 | DEFOCUS_ANGLE | SCORE | MICROSCOPE_VOLTAGE | MICROSCOPE_CS | AMPLITUDE_CONTRAST | BEAM_TILT_X | BEAM_TILT_Y | IMAGE_SHIFT_X | IMAGE_SHIFT_Y | ORIGINAL_IMAGE_FILENAME | PIXEL_SIZE);
+        // FIXME: how to include defocus and image name into output star? How to append files from different images?
+        // CHECK ME: How was template_matches_package.star created in the first place?
+        // output cisTEM formatted star file
+        output_params.all_parameters[rowId].position_in_stack                  = 1;
+        output_params.all_parameters[rowId].psi                                = current_psi;
+        output_params.all_parameters[rowId].theta                              = current_theta;
+        output_params.all_parameters[rowId].phi                                = current_phi;
+        output_params.all_parameters[rowId].original_x_position                = coord_x * pixel_size;
+        output_params.all_parameters[rowId].original_y_position                = coord_y * pixel_size;
+        output_params.all_parameters[rowId].defocus_1                          = 10000.0;
+        output_params.all_parameters[rowId].defocus_2                          = 10000.0;
+        output_params.all_parameters[rowId].defocus_angle                      = 20.0;
+        output_params.all_parameters[rowId].score                              = get<0>(current_peak);
+        output_params.all_parameters[rowId].microscope_voltage_kv              = 200.0;
+        output_params.all_parameters[rowId].microscope_spherical_aberration_mm = 2.7;
+        output_params.all_parameters[rowId].amplitude_contrast                 = 0.1;
+        output_params.all_parameters[rowId].beam_tilt_x                        = 0.0;
+        output_params.all_parameters[rowId].beam_tilt_y                        = 0.0;
+        output_params.all_parameters[rowId].image_shift_x                      = 0.0;
+        output_params.all_parameters[rowId].image_shift_y                      = 0.0;
+        output_params.all_parameters[rowId].original_image_filename            = "test.mrc";
+        output_params.all_parameters[rowId].pixel_size                         = 1.112;
+        wxPrintf("one peak done\n");
     }
+
+    output_params.WriteTocisTEMStarFile(wxString::Format("test.star").ToStdString( ), -1, -1, -1, -1);
 
     if ( is_running_locally == true ) {
         wxPrintf("\nFound %i peaks.\n\n", number_of_peaks_found);
