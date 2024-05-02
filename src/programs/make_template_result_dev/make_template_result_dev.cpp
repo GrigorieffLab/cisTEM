@@ -11,6 +11,126 @@
 using namespace std;
 using namespace Eigen;
 
+typedef struct image_asset {
+    string filename;
+    float  voltage;
+    float  Cs;
+    float  pixel_size;
+} image_asset;
+
+typedef struct tm_image_parameters {
+    vector<int>    image_asset_id;
+    vector<string> filename;
+    vector<float>  voltage;
+    vector<float>  Cs;
+    vector<float>  pixel_size;
+} tm_image_parameters;
+
+optional<image_asset> getDataForAssetId(const tm_image_parameters& data, int assetId) {
+    for ( size_t i = 0; i < data.image_asset_id.size( ); ++i ) {
+        if ( data.image_asset_id[i] == assetId ) {
+            image_asset result{
+                    data.filename[i],
+                    data.voltage[i],
+                    data.Cs[i],
+                    data.pixel_size[i]};
+            return result;
+        }
+    }
+    return nullopt; // Return an empty optional if not found
+}
+
+typedef struct tm_job {
+    vector<int>      image_asset_id;
+    vector<float>    defocus_1;
+    vector<float>    defocus_2;
+    vector<float>    defocus_angle;
+    vector<float>    amplitude_contrast;
+    vector<wxString> mip_filename;
+    vector<wxString> scaled_mip_filename;
+    vector<wxString> psi_filename;
+    vector<wxString> theta_filename;
+    vector<wxString> phi_filename;
+} tm_job;
+
+static int extract_image_parameters(void* data, int argc, char** argv, char** azColName) {
+    tm_image_parameters* current_image = static_cast<tm_image_parameters*>(data); // Cast data back to the correct type
+
+    for ( int i = 0; i < argc; i++ ) {
+        std::string colName = azColName[i];
+        if ( colName == "IMAGE_ASSET_ID" ) {
+            // Assuming the id column contains integers
+            current_image->image_asset_id.emplace_back(stoi(argv[i]));
+        }
+        else if ( colName == "FILENAME" ) {
+            // Assuming the name column contains strings
+            current_image->filename.emplace_back(argv[i]);
+        }
+        else if ( colName == "PIXEL_SIZE" ) {
+            // Assuming the name column contains strings
+            current_image->pixel_size.emplace_back(stof(argv[i]));
+        }
+        else if ( colName == "VOLTAGE" ) {
+            // Assuming the name column contains strings
+            current_image->voltage.emplace_back(stof(argv[i]));
+        }
+        else if ( colName == "SPHERICAL_ABERRATION" ) {
+            // Assuming the name column contains strings
+            current_image->Cs.emplace_back(stof(argv[i]));
+        }
+    }
+    return 0;
+}
+
+static int extract_tm_parameters(void* data, int argc, char** argv, char** azColName) {
+    tm_job* current_tm_job = static_cast<tm_job*>(data); // Cast data back to the correct type
+
+    for ( int i = 0; i < argc; i++ ) {
+        std::string colName = azColName[i];
+        if ( colName == "IMAGE_ASSET_ID" ) {
+            // Assuming the id column contains integers
+            current_tm_job->image_asset_id.emplace_back(stoi(argv[i]));
+        }
+        else if ( colName == "USED_DEFOCUS1" ) {
+            // Assuming the name column contains strings
+            current_tm_job->defocus_1.emplace_back(stof(argv[i]));
+        }
+        else if ( colName == "USED_DEFOCUS2" ) {
+            // Assuming the name column contains strings
+            current_tm_job->defocus_2.emplace_back(stof(argv[i]));
+        }
+        else if ( colName == "USED_DEFOCUS_ANGLE" ) {
+            // Assuming the name column contains strings
+            current_tm_job->defocus_angle.emplace_back(stof(argv[i]));
+        }
+        else if ( colName == "USED_AMPLITUDE_CONTRAST" ) {
+            // Assuming the name column contains strings
+            current_tm_job->amplitude_contrast.emplace_back(stof(argv[i]));
+        }
+        else if ( colName == "MIP_OUTPUT_FILE" ) {
+            // Assuming the name column contains strings
+            current_tm_job->mip_filename.emplace_back(argv[i]);
+        }
+        else if ( colName == "SCALED_MIP_OUTPUT_FILE" ) {
+            // Assuming the name column contains strings
+            current_tm_job->scaled_mip_filename.emplace_back(argv[i]);
+        }
+        else if ( colName == "PSI_OUTPUT_FILE" ) {
+            // Assuming the name column contains strings
+            current_tm_job->psi_filename.emplace_back(argv[i]);
+        }
+        else if ( colName == "THETA_OUTPUT_FILE" ) {
+            // Assuming the name column contains strings
+            current_tm_job->theta_filename.emplace_back(argv[i]);
+        }
+        else if ( colName == "PHI_OUTPUT_FILE" ) {
+            // Assuming the name column contains strings
+            current_tm_job->phi_filename.emplace_back(argv[i]);
+        }
+    }
+    return 0;
+}
+
 vector<float> CalculateProbit(const vector<float>& x) {
 
     // Step 1: Create a vector of pairs (value, original index)
@@ -164,28 +284,45 @@ void MakeTemplateResultDev::DoInteractiveUserInput( ) {
     wxString input_best_defocus_filename;
     wxString input_best_pixel_size_filename;
     wxString xyz_coords_filename;
+    wxString output_star_filename;
 
     int   min_peak_radius;
     float pixel_size;
     int   ignore_N_pixels_from_the_border = -1;
 
-    UserInput* my_input = new UserInput("MakeTemplateResultDev", 1.00);
+    bool     run_batch = false;
+    wxString input_database_filename;
+    int      tm_job_id = 1;
 
-    input_scaled_mip_filename       = my_input->GetFilenameFromUser("Input scaled MIP file", "The file for saving the maximum intensity projection image", "mip.mrc", false);
-    input_mip_filename              = my_input->GetFilenameFromUser("Input MIP file", "The file for saving the maximum intensity projection image", "mip.mrc", false);
-    input_best_psi_filename         = my_input->GetFilenameFromUser("Input psi file", "The file containing the best psi image", "psi.mrc", false);
-    input_best_theta_filename       = my_input->GetFilenameFromUser("Input theta file", "The file containing the best psi image", "theta.mrc", false);
-    input_best_phi_filename         = my_input->GetFilenameFromUser("Input phi file", "The file containing the best psi image", "phi.mrc", false);
-    input_best_defocus_filename     = my_input->GetFilenameFromUser("Input defocus file", "The file with the best defocus image", "defocus.mrc", true);
-    input_best_pixel_size_filename  = my_input->GetFilenameFromUser("Input pixel size file", "The file with the best pixel size image", "pixel_size.mrc", true);
-    xyz_coords_filename             = my_input->GetFilenameFromUser("Output x,y,z coordinate file", "The file for saving the x,y,z coordinates of the found targets", "coordinates.txt", false);
+    UserInput* my_input = new UserInput("MakeTemplateResultDev", 1.00);
+    run_batch           = my_input->GetYesNoFromUser("Run multiple images in a template match job?", "Individual image (false) or multiple images (true)", "No");
+    if ( run_batch ) {
+        input_database_filename = my_input->GetFilenameFromUser("Input database file", "The file for template match project", "tm.db", false);
+        tm_job_id               = my_input->GetIntFromUser("Template Match Job ID", "template matching job id", "1", 1);
+        output_star_filename    = my_input->GetFilenameFromUser("Output star file", "The star file containing the particle alignment parameters", "particle_stack.star", false);
+    }
+    else {
+        input_scaled_mip_filename      = my_input->GetFilenameFromUser("Input scaled MIP file", "The file for saving the maximum intensity projection image", "mip.mrc", false);
+        input_mip_filename             = my_input->GetFilenameFromUser("Input MIP file", "The file for saving the maximum intensity projection image", "mip.mrc", false);
+        input_best_psi_filename        = my_input->GetFilenameFromUser("Input psi file", "The file containing the best psi image", "psi.mrc", false);
+        input_best_theta_filename      = my_input->GetFilenameFromUser("Input theta file", "The file containing the best psi image", "theta.mrc", false);
+        input_best_phi_filename        = my_input->GetFilenameFromUser("Input phi file", "The file containing the best psi image", "phi.mrc", false);
+        input_best_defocus_filename    = my_input->GetFilenameFromUser("Input defocus file", "The file with the best defocus image", "defocus.mrc", true);
+        input_best_pixel_size_filename = my_input->GetFilenameFromUser("Input pixel size file", "The file with the best pixel size image", "pixel_size.mrc", true);
+        xyz_coords_filename            = my_input->GetFilenameFromUser("Output x,y,z coordinate file", "The file for saving the x,y,z coordinates of the found targets", "coordinates.txt", false);
+        pixel_size                     = my_input->GetFloatFromUser("Pixel size of images (A)", "Pixel size of input images in Angstroms", "1.0", 0.0);
+    }
+
     min_peak_radius                 = my_input->GetIntFromUser("Min Peak Radius (px.)", "Essentially the minimum closeness for peaks", "10", 1);
-    pixel_size                      = my_input->GetFloatFromUser("Pixel size of images (A)", "Pixel size of input images in Angstroms", "1.0", 0.0);
     ignore_N_pixels_from_the_border = my_input->GetIntFromUser("Ignore N pixels from the edge of the MIP", "Defaults to 1/2 the template dimension (-1)", "-1", -1);
     delete my_input;
 
     //	my_current_job.Reset(14);
-    my_current_job.ManualSetArguments("ttttttttifi", input_scaled_mip_filename.ToUTF8( ).data( ),
+    my_current_job.ManualSetArguments("btitttttttttfii", run_batch,
+                                      input_database_filename.ToUTF8( ).data( ),
+                                      tm_job_id,
+                                      output_star_filename.ToUTF8( ).data( ),
+                                      input_scaled_mip_filename.ToUTF8( ).data( ),
                                       input_mip_filename.ToUTF8( ).data( ),
                                       input_best_psi_filename.ToUTF8( ).data( ),
                                       input_best_theta_filename.ToUTF8( ).data( ),
@@ -193,8 +330,8 @@ void MakeTemplateResultDev::DoInteractiveUserInput( ) {
                                       input_best_defocus_filename.ToUTF8( ).data( ),
                                       input_best_pixel_size_filename.ToUTF8( ).data( ),
                                       xyz_coords_filename.ToUTF8( ).data( ),
-                                      min_peak_radius,
                                       pixel_size,
+                                      min_peak_radius,
                                       ignore_N_pixels_from_the_border);
 }
 
@@ -202,19 +339,22 @@ void MakeTemplateResultDev::DoInteractiveUserInput( ) {
 
 bool MakeTemplateResultDev::DoCalculation( ) {
 
-    wxDateTime start_time = wxDateTime::Now( );
-
-    wxString input_scaled_mip_filename       = my_current_job.arguments[0].ReturnStringArgument( );
-    wxString input_mip_filename              = my_current_job.arguments[1].ReturnStringArgument( );
-    wxString input_best_psi_filename         = my_current_job.arguments[2].ReturnStringArgument( );
-    wxString input_best_theta_filename       = my_current_job.arguments[3].ReturnStringArgument( );
-    wxString input_best_phi_filename         = my_current_job.arguments[4].ReturnStringArgument( );
-    wxString input_best_defocus_filename     = my_current_job.arguments[5].ReturnStringArgument( );
-    wxString input_best_pixel_size_filename  = my_current_job.arguments[6].ReturnStringArgument( );
-    wxString xyz_coords_filename             = my_current_job.arguments[7].ReturnStringArgument( );
-    int      min_peak_radius                 = my_current_job.arguments[8].ReturnIntegerArgument( );
-    float    pixel_size                      = my_current_job.arguments[9].ReturnFloatArgument( );
-    int      ignore_N_pixels_from_the_border = my_current_job.arguments[10].ReturnIntegerArgument( );
+    wxDateTime start_time                      = wxDateTime::Now( );
+    bool       run_batch                       = my_current_job.arguments[0].ReturnBoolArgument( );
+    wxString   input_database_filename         = my_current_job.arguments[1].ReturnStringArgument( );
+    int        tm_job_id                       = my_current_job.arguments[2].ReturnIntegerArgument( );
+    wxString   output_star_filename            = my_current_job.arguments[3].ReturnStringArgument( );
+    wxString   input_scaled_mip_filename       = my_current_job.arguments[4].ReturnStringArgument( );
+    wxString   input_mip_filename              = my_current_job.arguments[5].ReturnStringArgument( );
+    wxString   input_best_psi_filename         = my_current_job.arguments[6].ReturnStringArgument( );
+    wxString   input_best_theta_filename       = my_current_job.arguments[7].ReturnStringArgument( );
+    wxString   input_best_phi_filename         = my_current_job.arguments[8].ReturnStringArgument( );
+    wxString   input_best_defocus_filename     = my_current_job.arguments[9].ReturnStringArgument( );
+    wxString   input_best_pixel_size_filename  = my_current_job.arguments[10].ReturnStringArgument( );
+    wxString   xyz_coords_filename             = my_current_job.arguments[11].ReturnStringArgument( );
+    float      pixel_size                      = my_current_job.arguments[12].ReturnFloatArgument( );
+    int        min_peak_radius                 = my_current_job.arguments[13].ReturnIntegerArgument( );
+    int        ignore_N_pixels_from_the_border = my_current_job.arguments[14].ReturnIntegerArgument( );
 
     Image scaled_mip_image;
     Image mip_image;
@@ -224,8 +364,9 @@ bool MakeTemplateResultDev::DoCalculation( ) {
     Image defocus_image;
     Image pixel_size_image;
     int   result_number = 1;
-    Peak  current_peak;
 
+    int   mip_x_dimension;
+    int   mip_y_dimension;
     float current_phi;
     float current_theta;
     float current_psi;
@@ -235,142 +376,232 @@ bool MakeTemplateResultDev::DoCalculation( ) {
     int   number_of_peaks_found = 0;
     float sq_dist_x, sq_dist_y;
     long  address;
-    long  text_file_access_type;
+    long  text_file_access_type = OPEN_TO_WRITE;
 
-    vector<float>                         coordinates;
+    cisTEMParameterLine output_parameters;
+    cisTEMParameters    output_star_file;
+    // Preallocate space: number of peaks not known, so assume large enough number
+    output_star_file.PreallocateMemoryAndBlank(1000000);
+    output_star_file.parameters_to_write.SetActiveParameters(PSI | THETA | PHI | ORIGINAL_X_POSITION | ORIGINAL_Y_POSITION | DEFOCUS_1 | DEFOCUS_2 | DEFOCUS_ANGLE | SCORE | MICROSCOPE_VOLTAGE | MICROSCOPE_CS | AMPLITUDE_CONTRAST | BEAM_TILT_X | BEAM_TILT_Y | IMAGE_SHIFT_X | IMAGE_SHIFT_Y | ORIGINAL_IMAGE_FILENAME | PIXEL_SIZE);
+    tm_image_parameters                   current_tm_images;
+    tm_job                                current_tm_jobs;
+    int                                   number_of_images;
     vector<tuple<float, int, int, float>> localMaxima; // z-score, Row, Column, SNR
+    vector<float>                         coordinates;
 
-    text_file_access_type = OPEN_TO_WRITE;
-    NumericTextFile coordinate_file(xyz_coords_filename, text_file_access_type, 10);
-    coordinate_file.WriteCommentLine("         Psi          Theta            Phi              X              Y              Z      PixelSize           z-score           SNR           pval");
+    if ( run_batch ) {
+        // test database
+        sqlite3* db;
+        char*    zErrMsg = 0;
+        int      rc;
 
-    mip_image.QuickAndDirtyReadSlice(input_mip_filename.ToStdString( ), result_number);
-    scaled_mip_image.QuickAndDirtyReadSlice(input_scaled_mip_filename.ToStdString( ), result_number);
-    psi_image.QuickAndDirtyReadSlice(input_best_psi_filename.ToStdString( ), result_number);
-    theta_image.QuickAndDirtyReadSlice(input_best_theta_filename.ToStdString( ), result_number);
-    phi_image.QuickAndDirtyReadSlice(input_best_phi_filename.ToStdString( ), result_number);
-    defocus_image.QuickAndDirtyReadSlice(input_best_defocus_filename.ToStdString( ), result_number);
-    pixel_size_image.QuickAndDirtyReadSlice(input_best_pixel_size_filename.ToStdString( ), result_number);
-    int mip_x_dimension = mip_image.logical_x_dimension;
-    int mip_y_dimension = mip_image.logical_y_dimension;
+        // Open the database
+        rc = sqlite3_open(input_database_filename, &db);
+        if ( rc ) {
+            wxPrintf("Can't open database: %s\n", sqlite3_errmsg(db));
+            return 1;
+        }
+        else {
+            wxPrintf("Opened database successfully\n");
+        }
+        // SQL to fetch data
+        //const char* sql = "SELECT * FROM TEMPLATE_MATCH_LIST";
+        string sql = "SELECT * FROM TEMPLATE_MATCH_LIST WHERE TEMPLATE_MATCH_JOB_ID = " + to_string(tm_job_id);
 
-    if ( ignore_N_pixels_from_the_border > 0 && (ignore_N_pixels_from_the_border > mip_image.logical_x_dimension / 2 || ignore_N_pixels_from_the_border > mip_image.logical_y_dimension / 2) ) {
-        wxPrintf("You have entered %d for ignore_N_pixels_from_the_border, which is too large given image half dimesnsions of %d (X) and %d (Y)",
-                 ignore_N_pixels_from_the_border, mip_x_dimension / 2, mip_y_dimension / 2);
-        exit(-1);
+        // Execute SQL statement
+        rc = sqlite3_exec(db, sql.c_str( ), extract_tm_parameters, &current_tm_jobs, &zErrMsg);
+        if ( rc != SQLITE_OK ) {
+            wxPrintf("SQL error\n");
+            sqlite3_free(zErrMsg);
+        }
+        // debug printout
+        //else {
+        //    for ( size_t i = 0; i < current_tm_jobs.image_asset_id.size( ); i++ ) {
+        //        wxPrintf("mip =%s\n", current_tm_jobs.mip_filename[i]);
+        //    }
+        //}
+
+        sql = "SELECT * FROM IMAGE_ASSETS";
+
+        // Execute SQL statement
+        rc = sqlite3_exec(db, sql.c_str( ), extract_image_parameters, &current_tm_images, &zErrMsg);
+        if ( rc != SQLITE_OK ) {
+            wxPrintf("SQL error\n");
+            sqlite3_free(zErrMsg);
+        }
+        // debug printout
+        //else {
+        //    for ( size_t i = 0; i < current_tm_images.image_asset_id.size( ); i++ ) {
+        //        wxPrintf("image id = %i pixel size =%f\n", current_tm_images.image_asset_id[i], current_tm_images.pixel_size[i]);
+        //    }
+        //}
+
+        // Close the database connection
+        sqlite3_close(db);
+        number_of_images = current_tm_jobs.image_asset_id.size( );
     }
+    wxPrintf("number of images %i\n", number_of_images);
 
     wxPrintf("\n");
+    // loop through image and calculate p-value
+    for ( size_t img_idx = 0; img_idx < number_of_images; img_idx++ ) {
+        localMaxima.clear( ); // clear peak vector for each image
+        std::optional<image_asset> result;
+        if ( run_batch ) {
+            // read in TM job parameters
+            int image_asset_id = current_tm_jobs.image_asset_id[img_idx];
+            result             = getDataForAssetId(current_tm_images, image_asset_id);
+            wxPrintf("working on image ID = %i\n", image_asset_id);
+            mip_image.QuickAndDirtyReadSlice(current_tm_jobs.mip_filename[img_idx].ToStdString( ), result_number);
+            scaled_mip_image.QuickAndDirtyReadSlice(current_tm_jobs.scaled_mip_filename[img_idx].ToStdString( ), result_number);
+            psi_image.QuickAndDirtyReadSlice(current_tm_jobs.psi_filename[img_idx].ToStdString( ), result_number);
+            theta_image.QuickAndDirtyReadSlice(current_tm_jobs.theta_filename[img_idx].ToStdString( ), result_number);
+            phi_image.QuickAndDirtyReadSlice(current_tm_jobs.phi_filename[img_idx].ToStdString( ), result_number);
+            //defocus_image.QuickAndDirtyReadSlice(current_tm_jobs.defocus_filename[img_idx].ToStdString( ), result_number);
+            //pixel_size_image.QuickAndDirtyReadSlice(current_tm_jobs.pixel_size[img_idx].ToStdString( ), result_number);
+        }
+        else {
+            mip_image.QuickAndDirtyReadSlice(input_mip_filename.ToStdString( ), result_number);
+            scaled_mip_image.QuickAndDirtyReadSlice(input_scaled_mip_filename.ToStdString( ), result_number);
+            psi_image.QuickAndDirtyReadSlice(input_best_psi_filename.ToStdString( ), result_number);
+            theta_image.QuickAndDirtyReadSlice(input_best_theta_filename.ToStdString( ), result_number);
+            phi_image.QuickAndDirtyReadSlice(input_best_phi_filename.ToStdString( ), result_number);
+            defocus_image.QuickAndDirtyReadSlice(input_best_defocus_filename.ToStdString( ), result_number);
+            pixel_size_image.QuickAndDirtyReadSlice(input_best_pixel_size_filename.ToStdString( ), result_number);
+        }
+        mip_x_dimension = mip_image.logical_x_dimension;
+        mip_y_dimension = mip_image.logical_y_dimension;
 
-    for ( int i = ignore_N_pixels_from_the_border; i <= mip_x_dimension - ignore_N_pixels_from_the_border; i++ ) {
-        for ( int j = ignore_N_pixels_from_the_border; j <= mip_y_dimension - ignore_N_pixels_from_the_border; j++ ) {
+        if ( ignore_N_pixels_from_the_border > 0 && (ignore_N_pixels_from_the_border > mip_image.logical_x_dimension / 2 || ignore_N_pixels_from_the_border > mip_image.logical_y_dimension / 2) ) {
+            wxPrintf("You have entered %d for ignore_N_pixels_from_the_border, which is too large given image half dimesnsions of %d (X) and %d (Y)",
+                     ignore_N_pixels_from_the_border, mip_x_dimension / 2, mip_y_dimension / 2);
+            exit(-1);
+        }
 
-            float maxVal = scaled_mip_image.ReturnRealPixelFromPhysicalCoord(i, j, 0);
+        // Find local maxima in z-score map
+        for ( int i = ignore_N_pixels_from_the_border; i <= mip_x_dimension - ignore_N_pixels_from_the_border; i++ ) {
+            for ( int j = ignore_N_pixels_from_the_border; j <= mip_y_dimension - ignore_N_pixels_from_the_border; j++ ) {
 
-            bool isLocalMax = true;
-            // Check the neighborhood
-            for ( int ki = -min_peak_radius; ki <= min_peak_radius; ++ki ) {
-                for ( int kj = -min_peak_radius; kj <= min_peak_radius; ++kj ) {
-                    int ni = i + ki; // neighbor row index
-                    int nj = j + kj; // neighbor column index
-                    // Check boundaries and find maximum
-                    if ( ni >= 0 && ni < mip_x_dimension && nj >= 0 && nj < mip_y_dimension ) {
+                float maxVal = scaled_mip_image.ReturnRealPixelFromPhysicalCoord(i, j, 0);
 
-                        if ( scaled_mip_image.ReturnRealPixelFromPhysicalCoord(ni, nj, 0) > maxVal ) {
-                            maxVal     = scaled_mip_image.ReturnRealPixelFromPhysicalCoord(ni, nj, 0);
-                            isLocalMax = false;
+                bool isLocalMax = true;
+                // Check the neighborhood
+                for ( int ki = -min_peak_radius; ki <= min_peak_radius; ++ki ) {
+                    for ( int kj = -min_peak_radius; kj <= min_peak_radius; ++kj ) {
+                        int ni = i + ki; // neighbor row index
+                        int nj = j + kj; // neighbor column index
+                        // Check boundaries and find maximum
+                        if ( ni >= 0 && ni < mip_x_dimension && nj >= 0 && nj < mip_y_dimension ) {
+
+                            if ( scaled_mip_image.ReturnRealPixelFromPhysicalCoord(ni, nj, 0) > maxVal ) {
+                                maxVal     = scaled_mip_image.ReturnRealPixelFromPhysicalCoord(ni, nj, 0);
+                                isLocalMax = false;
+                            }
                         }
                     }
                 }
-            }
 
-            if ( isLocalMax && maxVal == scaled_mip_image.ReturnRealPixelFromPhysicalCoord(i, j, 0) ) {
-                localMaxima.emplace_back(maxVal, i, j, mip_image.ReturnRealPixelFromPhysicalCoord(i, j, 0));
-                number_of_peaks_found++;
+                if ( isLocalMax && maxVal == scaled_mip_image.ReturnRealPixelFromPhysicalCoord(i, j, 0) ) {
+                    localMaxima.emplace_back(maxVal, i, j, mip_image.ReturnRealPixelFromPhysicalCoord(i, j, 0));
+                }
             }
+        }
+        wxPrintf("Found %i peaks in image %i/%i\n", localMaxima.size( ), current_tm_jobs.image_asset_id[img_idx], number_of_images);
+        // Sort based on the local z-score maxima (descending order)
+        sort(localMaxima.begin( ), localMaxima.end( ), [](const tuple<float, int, int, float>& a, const tuple<float, int, int, float>& b) {
+            return get<0>(a) > get<0>(b); // Sorting by first element of tuple, which is the z-score
+        });
+
+        // calculate 2DTM p-value
+        vector<float> zScores;
+        vector<float> SNRs;
+        zScores.clear( );
+        SNRs.clear( );
+
+        // extract z-scores as vector
+        for ( int i = 0; i < localMaxima.size( ); ++i ) {
+            zScores.push_back(get<0>(localMaxima[i]));
+            SNRs.push_back(get<3>(localMaxima[i]));
+        }
+
+        // calculate quantile transformed values (probit function)
+        auto pro_zscores = CalculateProbit(zScores);
+        auto pro_snrs    = CalculateProbit(SNRs);
+        // estimate joint anisotropic gaussian from quantile transformed data
+        auto [Dinv_, Uinv__] = CalculateAnisotropicGaussianForProbit(pro_zscores, pro_snrs);
+
+        auto neg_log_p1q_ = Calculate1QPValue(pro_zscores, pro_snrs, Dinv_, Uinv__);
+
+        if ( ! run_batch ) {
+            // output coordinate file for single image
+            NumericTextFile coordinate_file(xyz_coords_filename, text_file_access_type, 10);
+
+            coordinate_file.WriteCommentLine("         Psi          Theta            Phi              X              Y              Z      PixelSize           z-score           SNR           pval");
+            number_of_images = 1;
+            for ( int rowId = 0; rowId < localMaxima.size( ); ++rowId ) {
+
+                coordinates.clear( ); // efficient for reusing vector
+                auto& current_peak       = localMaxima[rowId];
+                int   coord_x            = get<1>(current_peak);
+                int   coord_y            = get<2>(current_peak);
+                float current_psi        = psi_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0);
+                float current_theta      = theta_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0);
+                float current_phi        = phi_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0);
+                float current_defocus    = defocus_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0);
+                float current_pixel_size = pixel_size_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0);
+                coordinates.push_back(current_theta);
+                coordinates.push_back(current_phi);
+                coordinates.push_back(coord_x * pixel_size);
+                coordinates.push_back(coord_y * pixel_size);
+                coordinates.push_back(current_defocus);
+                coordinates.push_back(current_pixel_size);
+                coordinates.push_back(get<0>(current_peak)); // z-score
+                coordinates.push_back(get<3>(current_peak)); // SNR
+                coordinates.push_back(neg_log_p1q_[rowId]); // neg log p-value
+
+                // optional coordinate_file length
+                coordinate_file.WriteLine(coordinates.data( ));
+            }
+        }
+        else {
+            // write cisTEM star output for batch images
+            for ( int rowId = 0; rowId < localMaxima.size( ); ++rowId ) {
+                output_parameters.SetAllToZero( );
+                // output cisTEM formatted star file
+                auto& current_peak                                             = localMaxima[rowId];
+                int   coord_x                                                  = get<1>(current_peak);
+                int   coord_y                                                  = get<2>(current_peak);
+                float current_psi                                              = psi_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0);
+                float current_theta                                            = theta_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0);
+                float current_phi                                              = phi_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0);
+                output_parameters.position_in_stack                            = 1;
+                output_parameters.psi                                          = current_psi;
+                output_parameters.theta                                        = current_theta;
+                output_parameters.phi                                          = current_phi;
+                output_parameters.original_x_position                          = coord_x * result->pixel_size;
+                output_parameters.original_y_position                          = coord_y * result->pixel_size;
+                output_parameters.defocus_1                                    = current_tm_jobs.defocus_1[img_idx];
+                output_parameters.defocus_2                                    = current_tm_jobs.defocus_2[img_idx];
+                output_parameters.defocus_angle                                = current_tm_jobs.defocus_angle[img_idx];
+                output_parameters.score                                        = get<0>(current_peak);
+                output_parameters.microscope_voltage_kv                        = result->voltage;
+                output_parameters.microscope_spherical_aberration_mm           = result->Cs;
+                output_parameters.amplitude_contrast                           = current_tm_jobs.amplitude_contrast[img_idx];
+                output_parameters.beam_tilt_x                                  = 0.0;
+                output_parameters.beam_tilt_y                                  = 0.0;
+                output_parameters.image_shift_x                                = 0.0;
+                output_parameters.image_shift_y                                = 0.0;
+                output_parameters.original_image_filename                      = result->filename;
+                output_parameters.pixel_size                                   = result->pixel_size;
+                output_star_file.all_parameters[rowId + number_of_peaks_found] = output_parameters;
+            }
+            wxPrintf("Written out peak at line %i - %i\n", number_of_peaks_found, localMaxima.size( ) + number_of_peaks_found);
+            number_of_peaks_found += localMaxima.size( );
         }
     }
 
-    // Sort based on the local z-score maxima (descending order)
-    sort(localMaxima.begin( ), localMaxima.end( ), [](const tuple<float, int, int, float>& a, const tuple<float, int, int, float>& b) {
-        return get<0>(a) > get<0>(b); // Sorting by first element of tuple, which is the z-score
-    });
-
-    // calculate 2DTM p-value
-    vector<float> zScores;
-    vector<float> SNRs;
-
-    // extract z-scores as vector
-    for ( int i = 0; i < localMaxima.size( ); ++i ) {
-        zScores.push_back(get<0>(localMaxima[i]));
-        SNRs.push_back(get<3>(localMaxima[i]));
-    }
-
-    // calculate quantile transformed values (probit function)
-    auto pro_zscores = CalculateProbit(zScores);
-    auto pro_snrs    = CalculateProbit(SNRs);
-    // estimate joint anisotropic gaussian from quantile transformed data
-    auto [Dinv_, Uinv__] = CalculateAnisotropicGaussianForProbit(pro_zscores, pro_snrs);
-
-    auto neg_log_p1q_ = Calculate1QPValue(pro_zscores, pro_snrs, Dinv_, Uinv__);
-
-    int coord_x, coord_y;
-    // write cisTEM star output
-    cisTEMParameters output_params;
-    output_params.parameters_to_write.SetActiveParameters(PSI | THETA | PHI | ORIGINAL_X_POSITION | ORIGINAL_Y_POSITION | DEFOCUS_1 | DEFOCUS_2 | DEFOCUS_ANGLE | SCORE | MICROSCOPE_VOLTAGE | MICROSCOPE_CS | AMPLITUDE_CONTRAST | BEAM_TILT_X | BEAM_TILT_Y | IMAGE_SHIFT_X | IMAGE_SHIFT_Y | ORIGINAL_IMAGE_FILENAME | PIXEL_SIZE);
-    output_params.PreallocateMemoryAndBlank(localMaxima.size( ));
-
-    for ( int rowId = 0; rowId < localMaxima.size( ); ++rowId ) {
-        coordinates.clear( ); // efficient for reusing vector
-        auto& current_peak       = localMaxima[rowId];
-        coord_x                  = get<1>(current_peak);
-        coord_y                  = get<2>(current_peak);
-        float current_psi        = psi_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0);
-        float current_theta      = theta_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0);
-        float current_phi        = phi_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0);
-        float current_defocus    = defocus_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0); // FIXME what to do with defocus
-        float current_pixel_size = pixel_size_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0); // FIXME what to do with pixel size
-        coordinates.push_back(current_psi);
-        coordinates.push_back(current_theta);
-        coordinates.push_back(current_phi);
-        coordinates.push_back(coord_x * pixel_size);
-        coordinates.push_back(coord_y * pixel_size);
-        coordinates.push_back(current_defocus);
-        coordinates.push_back(current_pixel_size);
-        coordinates.push_back(get<0>(current_peak)); // z-score
-        coordinates.push_back(get<3>(current_peak)); // SNR
-        coordinates.push_back(neg_log_p1q_[rowId]); // neg log p-value
-
-        // optional coordinate_file length
-        coordinate_file.WriteLine(coordinates.data( ));
-
-        //    output_params.parameters_to_write.SetActiveParameters(PSI | THETA | PHI | ORIGINAL_X_POSITION | ORIGINAL_Y_POSITION | DEFOCUS_1 | DEFOCUS_2 | DEFOCUS_ANGLE | SCORE | MICROSCOPE_VOLTAGE | MICROSCOPE_CS | AMPLITUDE_CONTRAST | BEAM_TILT_X | BEAM_TILT_Y | IMAGE_SHIFT_X | IMAGE_SHIFT_Y | ORIGINAL_IMAGE_FILENAME | PIXEL_SIZE);
-        // FIXME: how to include defocus and image name into output star? How to append files from different images?
-        // CHECK ME: How was template_matches_package.star created in the first place?
-        // output cisTEM formatted star file
-        output_params.all_parameters[rowId].position_in_stack                  = 1;
-        output_params.all_parameters[rowId].psi                                = current_psi;
-        output_params.all_parameters[rowId].theta                              = current_theta;
-        output_params.all_parameters[rowId].phi                                = current_phi;
-        output_params.all_parameters[rowId].original_x_position                = coord_x * pixel_size;
-        output_params.all_parameters[rowId].original_y_position                = coord_y * pixel_size;
-        output_params.all_parameters[rowId].defocus_1                          = 10000.0;
-        output_params.all_parameters[rowId].defocus_2                          = 10000.0;
-        output_params.all_parameters[rowId].defocus_angle                      = 20.0;
-        output_params.all_parameters[rowId].score                              = get<0>(current_peak);
-        output_params.all_parameters[rowId].microscope_voltage_kv              = 200.0;
-        output_params.all_parameters[rowId].microscope_spherical_aberration_mm = 2.7;
-        output_params.all_parameters[rowId].amplitude_contrast                 = 0.1;
-        output_params.all_parameters[rowId].beam_tilt_x                        = 0.0;
-        output_params.all_parameters[rowId].beam_tilt_y                        = 0.0;
-        output_params.all_parameters[rowId].image_shift_x                      = 0.0;
-        output_params.all_parameters[rowId].image_shift_y                      = 0.0;
-        output_params.all_parameters[rowId].original_image_filename            = "test.mrc";
-        output_params.all_parameters[rowId].pixel_size                         = 1.112;
-        wxPrintf("one peak done\n");
-    }
-
-    output_params.WriteTocisTEMStarFile(wxString::Format("test.star").ToStdString( ), -1, -1, -1, -1);
+    if ( run_batch )
+        output_star_file.WriteTocisTEMStarFile(output_star_filename, -1, -1, 1, -1);
 
     if ( is_running_locally == true ) {
         wxPrintf("\nFound %i peaks.\n\n", number_of_peaks_found);
