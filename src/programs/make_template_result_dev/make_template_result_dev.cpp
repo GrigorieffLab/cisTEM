@@ -57,7 +57,7 @@ static int extract_image_parameters(void* data, int argc, char** argv, char** az
     tm_image_parameters* current_image = static_cast<tm_image_parameters*>(data); // Cast data back to the correct type
 
     for ( int i = 0; i < argc; i++ ) {
-        std::string colName = azColName[i];
+        string colName = azColName[i];
         if ( colName == "IMAGE_ASSET_ID" ) {
             // Assuming the id column contains integers
             current_image->image_asset_id.emplace_back(stoi(argv[i]));
@@ -86,7 +86,7 @@ static int extract_tm_parameters(void* data, int argc, char** argv, char** azCol
     tm_job* current_tm_job = static_cast<tm_job*>(data); // Cast data back to the correct type
 
     for ( int i = 0; i < argc; i++ ) {
-        std::string colName = azColName[i];
+        string colName = azColName[i];
         if ( colName == "IMAGE_ASSET_ID" ) {
             // Assuming the id column contains integers
             current_tm_job->image_asset_id.emplace_back(stoi(argv[i]));
@@ -292,7 +292,9 @@ void MakeTemplateResultDev::DoInteractiveUserInput( ) {
 
     bool     run_batch = false;
     wxString input_database_filename;
-    int      tm_job_id = 1;
+    int      tm_job_id      = 1;
+    float    cutoff         = 7.0;
+    int      sorting_metric = 1; // 1 for z-score, 2 for SNR, and 3 for p-value
 
     UserInput* my_input = new UserInput("MakeTemplateResultDev", 1.00);
     run_batch           = my_input->GetYesNoFromUser("Run multiple images in a template match job?", "Individual image (false) or multiple images (true)", "No");
@@ -315,10 +317,13 @@ void MakeTemplateResultDev::DoInteractiveUserInput( ) {
 
     min_peak_radius                 = my_input->GetIntFromUser("Min Peak Radius (px.)", "Essentially the minimum closeness for peaks", "10", 1);
     ignore_N_pixels_from_the_border = my_input->GetIntFromUser("Ignore N pixels from the edge of the MIP", "Defaults to 1/2 the template dimension (-1)", "-1", -1);
+    sorting_metric                  = my_input->GetIntFromUser("Sorting metric -- z-score(1) SNR(2) p-value(3)", "Thresholding metric for 2DTM output", "1", 1, 3);
+    cutoff                          = my_input->GetFloatFromUser("Sorting cutoff", "cutoff for selected metric", "7.5", 0.0);
+
     delete my_input;
 
     //	my_current_job.Reset(14);
-    my_current_job.ManualSetArguments("btitttttttttfii", run_batch,
+    my_current_job.ManualSetArguments("btitttttttttfiiif", run_batch,
                                       input_database_filename.ToUTF8( ).data( ),
                                       tm_job_id,
                                       output_star_filename.ToUTF8( ).data( ),
@@ -332,7 +337,9 @@ void MakeTemplateResultDev::DoInteractiveUserInput( ) {
                                       xyz_coords_filename.ToUTF8( ).data( ),
                                       pixel_size,
                                       min_peak_radius,
-                                      ignore_N_pixels_from_the_border);
+                                      ignore_N_pixels_from_the_border,
+                                      sorting_metric,
+                                      cutoff);
 }
 
 // override the do calculation method which will be what is actually run..
@@ -355,6 +362,8 @@ bool MakeTemplateResultDev::DoCalculation( ) {
     float      pixel_size                      = my_current_job.arguments[12].ReturnFloatArgument( );
     int        min_peak_radius                 = my_current_job.arguments[13].ReturnIntegerArgument( );
     int        ignore_N_pixels_from_the_border = my_current_job.arguments[14].ReturnIntegerArgument( );
+    int        sorting_metric                  = my_current_job.arguments[15].ReturnIntegerArgument( );
+    float      cutoff                          = my_current_job.arguments[16].ReturnFloatArgument( );
 
     Image scaled_mip_image;
     Image mip_image;
@@ -385,7 +394,7 @@ bool MakeTemplateResultDev::DoCalculation( ) {
     output_star_file.parameters_to_write.SetActiveParameters(PSI | THETA | PHI | ORIGINAL_X_POSITION | ORIGINAL_Y_POSITION | DEFOCUS_1 | DEFOCUS_2 | DEFOCUS_ANGLE | SCORE | MICROSCOPE_VOLTAGE | MICROSCOPE_CS | AMPLITUDE_CONTRAST | BEAM_TILT_X | BEAM_TILT_Y | IMAGE_SHIFT_X | IMAGE_SHIFT_Y | ORIGINAL_IMAGE_FILENAME | PIXEL_SIZE);
     tm_image_parameters                   current_tm_images;
     tm_job                                current_tm_jobs;
-    int                                   number_of_images;
+    int                                   number_of_images = 1;
     vector<tuple<float, int, int, float>> localMaxima; // z-score, Row, Column, SNR
     vector<float>                         coordinates;
 
@@ -445,8 +454,9 @@ bool MakeTemplateResultDev::DoCalculation( ) {
     wxPrintf("\n");
     // loop through image and calculate p-value
     for ( size_t img_idx = 0; img_idx < number_of_images; img_idx++ ) {
+        wxPrintf("\n\n");
         localMaxima.clear( ); // clear peak vector for each image
-        std::optional<image_asset> result;
+        optional<image_asset> result;
         if ( run_batch ) {
             // read in TM job parameters
             int image_asset_id = current_tm_jobs.image_asset_id[img_idx];
@@ -506,7 +516,7 @@ bool MakeTemplateResultDev::DoCalculation( ) {
                 }
             }
         }
-        wxPrintf("Found %i peaks in image %i/%i\n", localMaxima.size( ), current_tm_jobs.image_asset_id[img_idx], number_of_images);
+        wxPrintf("Found %i local maxima...\n", localMaxima.size( ));
         // Sort based on the local z-score maxima (descending order)
         sort(localMaxima.begin( ), localMaxima.end( ), [](const tuple<float, int, int, float>& a, const tuple<float, int, int, float>& b) {
             return get<0>(a) > get<0>(b); // Sorting by first element of tuple, which is the z-score
@@ -532,16 +542,42 @@ bool MakeTemplateResultDev::DoCalculation( ) {
 
         auto neg_log_p1q_ = Calculate1QPValue(pro_zscores, pro_snrs, Dinv_, Uinv__);
 
+        vector<tuple<float, int, int, float, float>> filteredLocalMaxima;
+
+        // Filter and combine data
+        float sorting_val;
+        for ( size_t i = 0; i < localMaxima.size( ); ++i ) {
+            if ( sorting_metric == 1 ) {
+                sorting_val = get<0>(localMaxima[i]); // z-score
+            }
+            else if ( sorting_metric == 2 ) {
+                sorting_val = get<3>(localMaxima[i]); // SNR
+            }
+            else if ( sorting_metric == 3 ) {
+                sorting_val = neg_log_p1q_[i];
+            }
+            if ( sorting_val >= cutoff ) { // Check if z-score is larger than a specified cutoff
+                filteredLocalMaxima.emplace_back(make_tuple(
+                        get<0>(localMaxima[i]), // z-score
+                        get<1>(localMaxima[i]), // coord_x
+                        get<2>(localMaxima[i]), // coord_y
+                        get<3>(localMaxima[i]), // SNR
+                        neg_log_p1q_[i] // p-value
+                        ));
+            }
+        }
+
+        wxPrintf("Found %i peaks above cutoff...\n", filteredLocalMaxima.size( ));
         if ( ! run_batch ) {
             // output coordinate file for single image
             NumericTextFile coordinate_file(xyz_coords_filename, text_file_access_type, 10);
 
             coordinate_file.WriteCommentLine("         Psi          Theta            Phi              X              Y              Z      PixelSize           z-score           SNR           pval");
             number_of_images = 1;
-            for ( int rowId = 0; rowId < localMaxima.size( ); ++rowId ) {
+            for ( int rowId = 0; rowId < filteredLocalMaxima.size( ); ++rowId ) {
 
                 coordinates.clear( ); // efficient for reusing vector
-                auto& current_peak       = localMaxima[rowId];
+                auto& current_peak       = filteredLocalMaxima[rowId];
                 int   coord_x            = get<1>(current_peak);
                 int   coord_y            = get<2>(current_peak);
                 float current_psi        = psi_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0);
@@ -549,6 +585,7 @@ bool MakeTemplateResultDev::DoCalculation( ) {
                 float current_phi        = phi_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0);
                 float current_defocus    = defocus_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0);
                 float current_pixel_size = pixel_size_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0);
+                coordinates.push_back(current_psi);
                 coordinates.push_back(current_theta);
                 coordinates.push_back(current_phi);
                 coordinates.push_back(coord_x * pixel_size);
@@ -557,7 +594,7 @@ bool MakeTemplateResultDev::DoCalculation( ) {
                 coordinates.push_back(current_pixel_size);
                 coordinates.push_back(get<0>(current_peak)); // z-score
                 coordinates.push_back(get<3>(current_peak)); // SNR
-                coordinates.push_back(neg_log_p1q_[rowId]); // neg log p-value
+                coordinates.push_back(get<4>(current_peak)); // neg log p-value
 
                 // optional coordinate_file length
                 coordinate_file.WriteLine(coordinates.data( ));
@@ -565,10 +602,10 @@ bool MakeTemplateResultDev::DoCalculation( ) {
         }
         else {
             // write cisTEM star output for batch images
-            for ( int rowId = 0; rowId < localMaxima.size( ); ++rowId ) {
+            for ( int rowId = 0; rowId < filteredLocalMaxima.size( ); ++rowId ) {
                 output_parameters.SetAllToZero( );
                 // output cisTEM formatted star file
-                auto& current_peak                                             = localMaxima[rowId];
+                auto& current_peak                                             = filteredLocalMaxima[rowId];
                 int   coord_x                                                  = get<1>(current_peak);
                 int   coord_y                                                  = get<2>(current_peak);
                 float current_psi                                              = psi_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0);
@@ -595,8 +632,8 @@ bool MakeTemplateResultDev::DoCalculation( ) {
                 output_parameters.pixel_size                                   = result->pixel_size;
                 output_star_file.all_parameters[rowId + number_of_peaks_found] = output_parameters;
             }
-            wxPrintf("Written out peak at line %i - %i\n", number_of_peaks_found, localMaxima.size( ) + number_of_peaks_found);
-            number_of_peaks_found += localMaxima.size( );
+            wxPrintf("Written out peak at line %i - %i\n", number_of_peaks_found, filteredLocalMaxima.size( ) + number_of_peaks_found);
+            number_of_peaks_found += filteredLocalMaxima.size( );
         }
     }
 
