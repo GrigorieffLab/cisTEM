@@ -433,7 +433,7 @@ void PDB::Init( ) {
         }
     }
 
-    if ( use_star_file && star_file_parameters.ReturnNumberofLines( ) > 1 ) {
+    if ( use_star_file ) {
 
         // First we need the average defocus to determine offsets in Z (for underfocus, the focal plane is above the specimen in the scope and the undefocus magnitude increases as we move away (down) the column.)
         star_file_parameters.CalculateDefocusDependence( );

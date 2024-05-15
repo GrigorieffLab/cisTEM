@@ -929,10 +929,11 @@ void SimulateApp::DoInteractiveUserInput( ) {
                 number_of_frames = 1;
                 // Assuming this is constant for all particles and frames FIXME
                 dose_per_frame = input_star_file.ReturnTotalExposure(0) - input_star_file.ReturnPreExposure(0);
+                pre_exposure   = input_star_file.ReturnPreExposure(0);
                 // tmp override for testing FIXME
-                dose_per_frame         = 1;
-                current_total_exposure = 1;
-                pre_exposure           = 1;
+                //dose_per_frame         = 1;
+                //current_total_exposure = 1;
+                //pre_exposure           = 1;
                 for ( int counter = 0; counter < number_preexisting_particles; counter++ ) {
                     mean_defocus += 0.5f * (input_star_file.ReturnDefocus1(counter) + input_star_file.ReturnDefocus2(counter));
                     number_of_frames = std::max(number_of_frames, float(input_star_file.ReturnParticleGroup(counter))); // FIXME, why is number of frames a float, prob a bad idea
