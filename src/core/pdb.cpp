@@ -433,6 +433,7 @@ void PDB::Init( ) {
         }
     }
 
+    /*
     if ( use_star_file ) {
 
         // First we need the average defocus to determine offsets in Z (for underfocus, the focal plane is above the specimen in the scope and the undefocus magnitude increases as we move away (down) the column.)
@@ -468,10 +469,11 @@ void PDB::Init( ) {
             //                              current_frame_number);
         }
     }
-    else {
-        // Set up the initial trajectory for this particle instance.
-        this->TransformBaseCoordinates(0, 0, 0, 0, 0, 0, 0, 0);
-    }
+    */
+    // else {
+    // Set up the initial trajectory for this particle instance.
+    this->TransformBaseCoordinates(0, 0, 0, 0, 0, 0, 0, 0);
+    // }
     // Finally, calculate the center of mass of the PDB object if it is not provided and is to be applied.
     if ( ! use_provided_com && shift_by_center_of_mass ) {
         for ( current_atom_number = 0; current_atom_number < number_of_real_atoms; current_atom_number++ ) {
@@ -731,53 +733,52 @@ void PDB::TransformLocalAndCombine(PDB* pdb_ensemble, int number_of_pdbs, int fr
             // at the minimum be highly correlated based on empirical observation.
 
             if ( pdb_ensemble[current_pdb].use_star_file ) {
-                // Fetch a clean copy of the atomic coordinates for this molecule
-                long current_atom = 0;
-                for ( long intra_mol_current_atom = 0; intra_mol_current_atom < pdb_ensemble[current_pdb].number_of_atoms; intra_mol_current_atom++ ) {
-                    current_atom                      = intra_mol_current_atom + pdb_ensemble[current_pdb].number_of_atoms * current_particle;
-                    this->my_atoms.Item(current_atom) = CopyAtom(pdb_ensemble[current_pdb].my_atoms.Item(intra_mol_current_atom));
+                for ( current_atom = 0; current_atom < pdb_ensemble[current_pdb].number_of_atoms; current_atom++ ) {
+                    this->my_atoms.Item(current_atom) = CopyAtom(pdb_ensemble[current_pdb].my_atoms.Item(current_atom));
+                }
 
-                    ix = my_atoms.Item(current_atom).x_coordinate;
-                    iy = my_atoms.Item(current_atom).y_coordinate;
-                    iz = my_atoms.Item(current_atom).z_coordinate;
+                for ( current_atom = 0; current_atom < pdb_ensemble[current_pdb].number_of_atoms; current_atom++ ) {
+                    if ( my_atoms.Item(current_atom).is_real_particle ) {
 
-                    // Transform the coordinates, but FIXME hard coding zero is shifty
-                    AnglesAndShifts my_angles(pdb_ensemble[current_pdb].initial_values[current_particle].euler1,
-                                              pdb_ensemble[current_pdb].initial_values[current_particle].euler2,
-                                              pdb_ensemble[current_pdb].initial_values[current_particle].euler3, 0.f, 0.f);
-                    my_angles.euler_matrix.RotateCoords(ix, iy, iz, tx, ty, tz);
+                        ix = my_atoms.Item(current_atom).x_coordinate;
+                        iy = my_atoms.Item(current_atom).y_coordinate;
+                        iz = my_atoms.Item(current_atom).z_coordinate;
 
-                    this->my_atoms.Item(current_atom).x_coordinate = tx + pdb_ensemble[current_pdb].initial_values[current_particle].ox;
-                    this->my_atoms.Item(current_atom).y_coordinate = ty + pdb_ensemble[current_pdb].initial_values[current_particle].oy;
-                    this->my_atoms.Item(current_atom).z_coordinate = tz + pdb_ensemble[current_pdb].initial_values[current_particle].oz;
+                        rotmat.RotateCoords(ix, iy, iz, tx, ty, tz); // Why can't I just put the shift operation above inline to the function?
+                        // Update the specimen with the transformed coords
 
-                    // minMax X
-                    if ( this->my_atoms.Item(current_atom).x_coordinate < min_x ) {
-                        min_x = this->my_atoms.Item(current_atom).x_coordinate;
-                    }
-                    if ( this->my_atoms.Item(current_atom).x_coordinate > max_x ) {
-                        max_x = this->my_atoms.Item(current_atom).x_coordinate;
-                    }
-                    // minMax Y
-                    if ( this->my_atoms.Item(current_atom).y_coordinate < min_y ) {
-                        min_y = this->my_atoms.Item(current_atom).y_coordinate;
-                    }
+                        this->my_atoms.Item(current_atom).x_coordinate = tx + ox;
+                        this->my_atoms.Item(current_atom).y_coordinate = ty + oy;
+                        this->my_atoms.Item(current_atom).z_coordinate = tz + oz;
 
-                    if ( this->my_atoms.Item(current_atom).y_coordinate > max_y ) {
-                        max_y = this->my_atoms.Item(current_atom).y_coordinate;
-                    }
-                    // minMax Z
-                    if ( this->my_atoms.Item(current_atom).z_coordinate < this->min_z ) {
-                        this->min_z = this->my_atoms.Item(current_atom).z_coordinate;
-                    }
+                        // minMax X
+                        if ( this->my_atoms.Item(current_atom).x_coordinate < min_x ) {
+                            min_x = this->my_atoms.Item(current_atom).x_coordinate;
+                        }
+                        if ( this->my_atoms.Item(current_atom).x_coordinate > max_x ) {
+                            max_x = this->my_atoms.Item(current_atom).x_coordinate;
+                        }
+                        // minMax Y
+                        if ( this->my_atoms.Item(current_atom).y_coordinate < min_y ) {
+                            min_y = this->my_atoms.Item(current_atom).y_coordinate;
+                        }
 
-                    if ( this->my_atoms.Item(current_atom).z_coordinate > this->max_z ) {
-                        this->max_z = this->my_atoms.Item(current_atom).z_coordinate;
-                    }
+                        if ( this->my_atoms.Item(current_atom).y_coordinate > max_y ) {
+                            max_y = this->my_atoms.Item(current_atom).y_coordinate;
+                        }
+                        // minMax Z
+                        if ( this->my_atoms.Item(current_atom).z_coordinate < this->min_z ) {
+                            this->min_z = this->my_atoms.Item(current_atom).z_coordinate;
+                        }
 
-                    this->number_of_each_atom[my_atoms.Item(current_atom).atom_type]++;
-                    average_bFactor += my_atoms.Item(current_atom).bfactor;
-                    current_total_atom++;
+                        if ( this->my_atoms.Item(current_atom).z_coordinate > this->max_z ) {
+                            this->max_z = this->my_atoms.Item(current_atom).z_coordinate;
+                        }
+
+                        this->number_of_each_atom[pdb_ensemble[current_pdb].my_atoms.Item(current_atom).atom_type]++;
+                        average_bFactor += my_atoms.Item(current_atom).bfactor;
+                        current_total_atom++;
+                    } // if on real particles
                 }
             }
             else {
