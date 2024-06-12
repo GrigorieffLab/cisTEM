@@ -293,10 +293,11 @@ void MakeTemplateResultDev::DoInteractiveUserInput( ) {
 
     bool     run_batch = false;
     wxString input_database_filename;
-    int      tm_job_id      = 1;
-    float    cutoff         = 7.0;
-    int      sorting_metric = 1; // 1 for z-score, 2 for SNR, and 3 for p-value
-    int      num_threads    = 1;
+    int      tm_job_id           = 1;
+    float    cutoff              = 7.0;
+    int      sorting_metric      = 1; // 1 for z-score, 2 for SNR, and 3 for p-value
+    int      local_maxima_metric = 1;
+    int      num_threads         = 1;
 
     UserInput* my_input = new UserInput("MakeTemplateResultDev", 1.00);
     run_batch           = my_input->GetYesNoFromUser("Run multiple images in a template match job?", "Individual image (false) or multiple images (true)", "No");
@@ -321,12 +322,13 @@ void MakeTemplateResultDev::DoInteractiveUserInput( ) {
     min_peak_radius                 = my_input->GetIntFromUser("Min Peak Radius (px.)", "Essentially the minimum closeness for peaks", "10", 1);
     ignore_N_pixels_from_the_border = my_input->GetIntFromUser("Ignore N pixels from the edge of the MIP", "Default to 50px", "10", 0);
     sorting_metric                  = my_input->GetIntFromUser("Sorting metric -- z-score(1) SNR(2) p-value(3)", "Thresholding metric for 2DTM output", "1", 1, 3);
+    local_maxima_metric             = my_input->GetIntFromUser("Local maxima metric -- z-score(1) SNR(2) p-value(3)", "Maximum filter metric for 2DTM output", "1", 1, 3);
     cutoff                          = my_input->GetFloatFromUser("Sorting cutoff", "cutoff for selected metric", "7.5", 0.0);
 
     delete my_input;
 
     //	my_current_job.Reset(14);
-    my_current_job.ManualSetArguments("btitittttttttfiiif", run_batch,
+    my_current_job.ManualSetArguments("btitittttttttfiiiif", run_batch,
                                       input_database_filename.ToUTF8( ).data( ),
                                       tm_job_id,
                                       output_star_filename.ToUTF8( ).data( ),
@@ -343,6 +345,7 @@ void MakeTemplateResultDev::DoInteractiveUserInput( ) {
                                       min_peak_radius,
                                       ignore_N_pixels_from_the_border,
                                       sorting_metric,
+                                      local_maxima_metric,
                                       cutoff);
 }
 
@@ -368,7 +371,8 @@ bool MakeTemplateResultDev::DoCalculation( ) {
     int        min_peak_radius                 = my_current_job.arguments[14].ReturnIntegerArgument( );
     int        ignore_N_pixels_from_the_border = my_current_job.arguments[15].ReturnIntegerArgument( );
     int        sorting_metric                  = my_current_job.arguments[16].ReturnIntegerArgument( );
-    float      cutoff                          = my_current_job.arguments[17].ReturnFloatArgument( );
+    int        local_maxima_metric             = my_current_job.arguments[17].ReturnIntegerArgument( );
+    float      cutoff                          = my_current_job.arguments[18].ReturnFloatArgument( );
 
     Image scaled_mip_image;
     Image mip_image;
@@ -417,33 +421,65 @@ bool MakeTemplateResultDev::DoCalculation( ) {
         }
 
         // Find local maxima in z-score map
-        for ( int i = ignore_N_pixels_from_the_border; i <= mip_image.logical_x_dimension - ignore_N_pixels_from_the_border; i++ ) {
-            for ( int j = ignore_N_pixels_from_the_border; j <= mip_image.logical_y_dimension - ignore_N_pixels_from_the_border; j++ ) {
+        if ( local_maxima_metric == 1 ) {
+            for ( int i = ignore_N_pixels_from_the_border; i <= mip_image.logical_x_dimension - ignore_N_pixels_from_the_border; i++ ) {
+                for ( int j = ignore_N_pixels_from_the_border; j <= mip_image.logical_y_dimension - ignore_N_pixels_from_the_border; j++ ) {
 
-                float maxVal = scaled_mip_image.ReturnRealPixelFromPhysicalCoord(i, j, 0);
+                    float maxVal = scaled_mip_image.ReturnRealPixelFromPhysicalCoord(i, j, 0);
 
-                bool isLocalMax = true;
-                // Check the neighborhood
-                for ( int ki = -min_peak_radius; ki <= min_peak_radius; ++ki ) {
-                    for ( int kj = -min_peak_radius; kj <= min_peak_radius; ++kj ) {
-                        int ni = i + ki; // neighbor row index
-                        int nj = j + kj; // neighbor column index
-                        // Check boundaries and find maximum
-                        if ( ni >= 0 && ni < mip_image.logical_x_dimension && nj >= 0 && nj < mip_image.logical_y_dimension ) {
+                    bool isLocalMax = true;
+                    // Check the neighborhood
+                    for ( int ki = -min_peak_radius; ki <= min_peak_radius; ++ki ) {
+                        for ( int kj = -min_peak_radius; kj <= min_peak_radius; ++kj ) {
+                            int ni = i + ki; // neighbor row index
+                            int nj = j + kj; // neighbor column index
+                            // Check boundaries and find maximum
+                            if ( ni >= 0 && ni < mip_image.logical_x_dimension && nj >= 0 && nj < mip_image.logical_y_dimension ) {
 
-                            if ( scaled_mip_image.ReturnRealPixelFromPhysicalCoord(ni, nj, 0) > maxVal ) {
-                                maxVal     = scaled_mip_image.ReturnRealPixelFromPhysicalCoord(ni, nj, 0);
-                                isLocalMax = false;
+                                if ( scaled_mip_image.ReturnRealPixelFromPhysicalCoord(ni, nj, 0) > maxVal ) {
+                                    maxVal     = scaled_mip_image.ReturnRealPixelFromPhysicalCoord(ni, nj, 0);
+                                    isLocalMax = false;
+                                }
                             }
                         }
                     }
-                }
 
-                if ( isLocalMax && maxVal == scaled_mip_image.ReturnRealPixelFromPhysicalCoord(i, j, 0) ) {
-                    localMaxima.emplace_back(maxVal, i, j, mip_image.ReturnRealPixelFromPhysicalCoord(i, j, 0));
+                    if ( isLocalMax && maxVal == scaled_mip_image.ReturnRealPixelFromPhysicalCoord(i, j, 0) ) {
+                        localMaxima.emplace_back(maxVal, i, j, mip_image.ReturnRealPixelFromPhysicalCoord(i, j, 0));
+                    }
                 }
             }
         }
+        else if ( local_maxima_metric == 2 ) {
+            for ( int i = ignore_N_pixels_from_the_border; i <= mip_image.logical_x_dimension - ignore_N_pixels_from_the_border; i++ ) {
+                for ( int j = ignore_N_pixels_from_the_border; j <= mip_image.logical_y_dimension - ignore_N_pixels_from_the_border; j++ ) {
+
+                    float maxVal = mip_image.ReturnRealPixelFromPhysicalCoord(i, j, 0);
+
+                    bool isLocalMax = true;
+                    // Check the neighborhood
+                    for ( int ki = -min_peak_radius; ki <= min_peak_radius; ++ki ) {
+                        for ( int kj = -min_peak_radius; kj <= min_peak_radius; ++kj ) {
+                            int ni = i + ki; // neighbor row index
+                            int nj = j + kj; // neighbor column index
+                            // Check boundaries and find maximum
+                            if ( ni >= 0 && ni < mip_image.logical_x_dimension && nj >= 0 && nj < mip_image.logical_y_dimension ) {
+
+                                if ( mip_image.ReturnRealPixelFromPhysicalCoord(ni, nj, 0) > maxVal ) {
+                                    maxVal     = mip_image.ReturnRealPixelFromPhysicalCoord(ni, nj, 0);
+                                    isLocalMax = false;
+                                }
+                            }
+                        }
+                    }
+
+                    if ( isLocalMax && maxVal == mip_image.ReturnRealPixelFromPhysicalCoord(i, j, 0) ) {
+                        localMaxima.emplace_back(maxVal, i, j, scaled_mip_image.ReturnRealPixelFromPhysicalCoord(i, j, 0));
+                    }
+                }
+            }
+        }
+
         wxPrintf("Found %i local maxima...\n", localMaxima.size( ));
         // Sort based on the local z-score maxima (descending order)
         sort(localMaxima.begin( ), localMaxima.end( ), [](const tuple<float, int, int, float>& a, const tuple<float, int, int, float>& b) {
@@ -457,9 +493,17 @@ bool MakeTemplateResultDev::DoCalculation( ) {
         SNRs.clear( );
 
         // Extract z-scores and SNRs as vector
-        for ( int i = 0; i < localMaxima.size( ); ++i ) {
-            zScores.push_back(get<0>(localMaxima[i]));
-            SNRs.push_back(get<3>(localMaxima[i]));
+        if ( local_maxima_metric == 1 ) {
+            for ( int i = 0; i < localMaxima.size( ); ++i ) {
+                zScores.push_back(get<0>(localMaxima[i]));
+                SNRs.push_back(get<3>(localMaxima[i]));
+            }
+        }
+        else if ( local_maxima_metric == 2 ) {
+            for ( int i = 0; i < localMaxima.size( ); ++i ) {
+                SNRs.push_back(get<0>(localMaxima[i]));
+                zScores.push_back(get<3>(localMaxima[i]));
+            }
         }
 
         // Calculate quantile transformed values (probit function)
@@ -475,26 +519,51 @@ bool MakeTemplateResultDev::DoCalculation( ) {
 
         // Filter peaks based on specified metric and cutoff
         float sorting_val;
-        for ( size_t i = 0; i < localMaxima.size( ); ++i ) {
-            if ( sorting_metric == 1 ) {
-                sorting_val = get<0>(localMaxima[i]); // z-score
-            }
-            else if ( sorting_metric == 2 ) {
-                sorting_val = get<3>(localMaxima[i]); // SNR
-            }
-            else if ( sorting_metric == 3 ) {
-                sorting_val = neg_log_p1q_[i];
-            }
-            if ( sorting_val >= cutoff ) { // Check if z-score is larger than a specified cutoff
-                filteredLocalMaxima.emplace_back(make_tuple(
-                        get<0>(localMaxima[i]), // z-score
-                        get<1>(localMaxima[i]), // coord_x
-                        get<2>(localMaxima[i]), // coord_y
-                        get<3>(localMaxima[i]), // SNR
-                        neg_log_p1q_[i] // p-value
-                        ));
+        if ( local_maxima_metric == 1 ) { // zscore, x, y, snr
+            for ( size_t i = 0; i < localMaxima.size( ); ++i ) {
+                if ( sorting_metric == 1 ) {
+                    sorting_val = get<0>(localMaxima[i]); // z-score
+                }
+                else if ( sorting_metric == 2 ) {
+                    sorting_val = get<3>(localMaxima[i]); // SNR
+                }
+                else if ( sorting_metric == 3 ) {
+                    sorting_val = neg_log_p1q_[i];
+                }
+                if ( sorting_val >= cutoff ) { // Check if z-score is larger than a specified cutoff
+                    filteredLocalMaxima.emplace_back(make_tuple(
+                            get<0>(localMaxima[i]), // z-score
+                            get<1>(localMaxima[i]), // coord_x
+                            get<2>(localMaxima[i]), // coord_y
+                            get<3>(localMaxima[i]), // SNR
+                            neg_log_p1q_[i] // p-value
+                            ));
+                }
             }
         }
+        else if ( local_maxima_metric == 2 ) { // snr, x, y, zscore
+            for ( size_t i = 0; i < localMaxima.size( ); ++i ) {
+                if ( sorting_metric == 1 ) {
+                    sorting_val = get<3>(localMaxima[i]); // z-score
+                }
+                else if ( sorting_metric == 2 ) {
+                    sorting_val = get<0>(localMaxima[i]); // SNR
+                }
+                else if ( sorting_metric == 3 ) {
+                    sorting_val = neg_log_p1q_[i];
+                }
+                if ( sorting_val >= cutoff ) { // Check if z-score is larger than a specified cutoff
+                    filteredLocalMaxima.emplace_back(make_tuple(
+                            get<3>(localMaxima[i]), // z-score
+                            get<1>(localMaxima[i]), // coord_x
+                            get<2>(localMaxima[i]), // coord_y
+                            get<0>(localMaxima[i]), // SNR
+                            neg_log_p1q_[i] // p-value
+                            ));
+                }
+            }
+        }
+
         wxPrintf("Found %i peaks above cutoff...\n", filteredLocalMaxima.size( ));
         number_of_peaks_found += filteredLocalMaxima.size( );
 
@@ -583,7 +652,7 @@ bool MakeTemplateResultDev::DoCalculation( ) {
 
         wxPrintf("\n");
         // Parallel when running multiple images in a TM job
-#pragma omp parallel num_threads(num_threads) default(none) shared(current_tm_jobs, current_tm_images, ignore_N_pixels_from_the_border, min_peak_radius, output_star_file, number_of_peaks_found, number_of_images, cutoff, sorting_metric) private(localMaxima, mip_image, scaled_mip_image, psi_image, theta_image, phi_image, defocus_image, pixel_size_image, output_parameters)
+#pragma omp parallel num_threads(num_threads) default(none) shared(current_tm_jobs, current_tm_images, ignore_N_pixels_from_the_border, min_peak_radius, output_star_file, number_of_peaks_found, number_of_images, cutoff, sorting_metric, local_maxima_metric) private(localMaxima, mip_image, scaled_mip_image, psi_image, theta_image, phi_image, defocus_image, pixel_size_image, output_parameters)
         {
 #pragma omp for schedule(dynamic, 1)
             // Loop through image
@@ -609,33 +678,65 @@ bool MakeTemplateResultDev::DoCalculation( ) {
                 }
 
                 // Find local maxima in z-score map
-                for ( int i = ignore_N_pixels_from_the_border; i <= mip_image.logical_x_dimension - ignore_N_pixels_from_the_border; i++ ) {
-                    for ( int j = ignore_N_pixels_from_the_border; j <= mip_image.logical_y_dimension - ignore_N_pixels_from_the_border; j++ ) {
+                if ( local_maxima_metric == 1 ) {
+                    for ( int i = ignore_N_pixels_from_the_border; i <= mip_image.logical_x_dimension - ignore_N_pixels_from_the_border; i++ ) {
+                        for ( int j = ignore_N_pixels_from_the_border; j <= mip_image.logical_y_dimension - ignore_N_pixels_from_the_border; j++ ) {
 
-                        float maxVal = scaled_mip_image.ReturnRealPixelFromPhysicalCoord(i, j, 0);
+                            float maxVal = scaled_mip_image.ReturnRealPixelFromPhysicalCoord(i, j, 0);
 
-                        bool isLocalMax = true;
-                        // Check the neighborhood
-                        for ( int ki = -min_peak_radius; ki <= min_peak_radius; ++ki ) {
-                            for ( int kj = -min_peak_radius; kj <= min_peak_radius; ++kj ) {
-                                int ni = i + ki; // neighbor row index
-                                int nj = j + kj; // neighbor column index
-                                // Check boundaries and find maximum
-                                if ( ni >= 0 && ni < mip_image.logical_x_dimension && nj >= 0 && nj < mip_image.logical_y_dimension ) {
+                            bool isLocalMax = true;
+                            // Check the neighborhood
+                            for ( int ki = -min_peak_radius; ki <= min_peak_radius; ++ki ) {
+                                for ( int kj = -min_peak_radius; kj <= min_peak_radius; ++kj ) {
+                                    int ni = i + ki; // neighbor row index
+                                    int nj = j + kj; // neighbor column index
+                                    // Check boundaries and find maximum
+                                    if ( ni >= 0 && ni < mip_image.logical_x_dimension && nj >= 0 && nj < mip_image.logical_y_dimension ) {
 
-                                    if ( scaled_mip_image.ReturnRealPixelFromPhysicalCoord(ni, nj, 0) > maxVal ) {
-                                        maxVal     = scaled_mip_image.ReturnRealPixelFromPhysicalCoord(ni, nj, 0);
-                                        isLocalMax = false;
+                                        if ( scaled_mip_image.ReturnRealPixelFromPhysicalCoord(ni, nj, 0) > maxVal ) {
+                                            maxVal     = scaled_mip_image.ReturnRealPixelFromPhysicalCoord(ni, nj, 0);
+                                            isLocalMax = false;
+                                        }
                                     }
                                 }
                             }
-                        }
 
-                        if ( isLocalMax && maxVal == scaled_mip_image.ReturnRealPixelFromPhysicalCoord(i, j, 0) ) {
-                            localMaxima.emplace_back(maxVal, i, j, mip_image.ReturnRealPixelFromPhysicalCoord(i, j, 0));
+                            if ( isLocalMax && maxVal == scaled_mip_image.ReturnRealPixelFromPhysicalCoord(i, j, 0) ) {
+                                localMaxima.emplace_back(maxVal, i, j, mip_image.ReturnRealPixelFromPhysicalCoord(i, j, 0));
+                            }
                         }
                     }
                 }
+                else if ( local_maxima_metric == 2 ) {
+                    for ( int i = ignore_N_pixels_from_the_border; i <= mip_image.logical_x_dimension - ignore_N_pixels_from_the_border; i++ ) {
+                        for ( int j = ignore_N_pixels_from_the_border; j <= mip_image.logical_y_dimension - ignore_N_pixels_from_the_border; j++ ) {
+
+                            float maxVal = mip_image.ReturnRealPixelFromPhysicalCoord(i, j, 0);
+
+                            bool isLocalMax = true;
+                            // Check the neighborhood
+                            for ( int ki = -min_peak_radius; ki <= min_peak_radius; ++ki ) {
+                                for ( int kj = -min_peak_radius; kj <= min_peak_radius; ++kj ) {
+                                    int ni = i + ki; // neighbor row index
+                                    int nj = j + kj; // neighbor column index
+                                    // Check boundaries and find maximum
+                                    if ( ni >= 0 && ni < mip_image.logical_x_dimension && nj >= 0 && nj < mip_image.logical_y_dimension ) {
+
+                                        if ( mip_image.ReturnRealPixelFromPhysicalCoord(ni, nj, 0) > maxVal ) {
+                                            maxVal     = mip_image.ReturnRealPixelFromPhysicalCoord(ni, nj, 0);
+                                            isLocalMax = false;
+                                        }
+                                    }
+                                }
+                            }
+
+                            if ( isLocalMax && maxVal == mip_image.ReturnRealPixelFromPhysicalCoord(i, j, 0) ) {
+                                localMaxima.emplace_back(maxVal, i, j, scaled_mip_image.ReturnRealPixelFromPhysicalCoord(i, j, 0));
+                            }
+                        }
+                    }
+                }
+
                 wxPrintf("Found %i local maxima...\n", localMaxima.size( ));
                 // Sort based on the local z-score maxima (descending order)
                 sort(localMaxima.begin( ), localMaxima.end( ), [](const tuple<float, int, int, float>& a, const tuple<float, int, int, float>& b) {
@@ -647,9 +748,17 @@ bool MakeTemplateResultDev::DoCalculation( ) {
                 vector<float> SNRs;
                 zScores.clear( );
                 SNRs.clear( );
-                for ( int i = 0; i < localMaxima.size( ); ++i ) {
-                    zScores.push_back(get<0>(localMaxima[i]));
-                    SNRs.push_back(get<3>(localMaxima[i]));
+                if ( local_maxima_metric == 1 ) {
+                    for ( int i = 0; i < localMaxima.size( ); ++i ) {
+                        zScores.push_back(get<0>(localMaxima[i]));
+                        SNRs.push_back(get<3>(localMaxima[i]));
+                    }
+                }
+                else if ( local_maxima_metric == 2 ) {
+                    for ( int i = 0; i < localMaxima.size( ); ++i ) {
+                        SNRs.push_back(get<0>(localMaxima[i]));
+                        zScores.push_back(get<3>(localMaxima[i]));
+                    }
                 }
 
                 // Calculate quantile transformed values (probit function)
@@ -664,24 +773,48 @@ bool MakeTemplateResultDev::DoCalculation( ) {
 
                 // Filter and combine data
                 float sorting_val;
-                for ( size_t i = 0; i < localMaxima.size( ); ++i ) {
-                    if ( sorting_metric == 1 ) {
-                        sorting_val = get<0>(localMaxima[i]); // z-score
+                if ( local_maxima_metric == 1 ) {
+                    for ( size_t i = 0; i < localMaxima.size( ); ++i ) {
+                        if ( sorting_metric == 1 ) {
+                            sorting_val = get<0>(localMaxima[i]); // z-score
+                        }
+                        else if ( sorting_metric == 2 ) {
+                            sorting_val = get<3>(localMaxima[i]); // SNR
+                        }
+                        else if ( sorting_metric == 3 ) {
+                            sorting_val = neg_log_p1q_[i];
+                        }
+                        if ( sorting_val >= cutoff ) { // Check if z-score is larger than a specified cutoff
+                            filteredLocalMaxima.emplace_back(make_tuple(
+                                    get<0>(localMaxima[i]), // z-score
+                                    get<1>(localMaxima[i]), // coord_x
+                                    get<2>(localMaxima[i]), // coord_y
+                                    get<3>(localMaxima[i]), // SNR
+                                    neg_log_p1q_[i] // p-value
+                                    ));
+                        }
                     }
-                    else if ( sorting_metric == 2 ) {
-                        sorting_val = get<3>(localMaxima[i]); // SNR
-                    }
-                    else if ( sorting_metric == 3 ) {
-                        sorting_val = neg_log_p1q_[i];
-                    }
-                    if ( sorting_val >= cutoff ) { // Check if z-score is larger than a specified cutoff
-                        filteredLocalMaxima.emplace_back(make_tuple(
-                                get<0>(localMaxima[i]), // z-score
-                                get<1>(localMaxima[i]), // coord_x
-                                get<2>(localMaxima[i]), // coord_y
-                                get<3>(localMaxima[i]), // SNR
-                                neg_log_p1q_[i] // p-value
-                                ));
+                }
+                else if ( local_maxima_metric == 2 ) {
+                    for ( size_t i = 0; i < localMaxima.size( ); ++i ) {
+                        if ( sorting_metric == 1 ) {
+                            sorting_val = get<3>(localMaxima[i]); // z-score
+                        }
+                        else if ( sorting_metric == 2 ) {
+                            sorting_val = get<0>(localMaxima[i]); // SNR
+                        }
+                        else if ( sorting_metric == 3 ) {
+                            sorting_val = neg_log_p1q_[i];
+                        }
+                        if ( sorting_val >= cutoff ) { // Check if z-score is larger than a specified cutoff
+                            filteredLocalMaxima.emplace_back(make_tuple(
+                                    get<3>(localMaxima[i]), // z-score
+                                    get<1>(localMaxima[i]), // coord_x
+                                    get<2>(localMaxima[i]), // coord_y
+                                    get<0>(localMaxima[i]), // SNR
+                                    neg_log_p1q_[i] // p-value
+                                    ));
+                        }
                     }
                 }
 
