@@ -52,6 +52,7 @@ typedef struct tm_job {
     vector<wxString> psi_filename;
     vector<wxString> theta_filename;
     vector<wxString> phi_filename;
+    vector<wxString> defocus_filename;
 } tm_job;
 
 static int extract_image_parameters(void* data, int argc, char** argv, char** azColName) {
@@ -127,6 +128,10 @@ static int extract_tm_parameters(void* data, int argc, char** argv, char** azCol
         else if ( colName == "PHI_OUTPUT_FILE" ) {
             // Assuming the name column contains strings
             current_tm_job->phi_filename.emplace_back(argv[i]);
+        }
+        else if ( colName == "DEFOCUS_OUTPUT_FILE" ) {
+            // Assuming the name column contains strings
+            current_tm_job->defocus_filename.emplace_back(argv[i]);
         }
     }
     return 0;
@@ -626,6 +631,7 @@ bool MakeTemplateResultDev::DoCalculation( ) {
         //else {
         //    for ( size_t i = 0; i < current_tm_jobs.image_asset_id.size( ); i++ ) {
         //        wxPrintf("mip =%s\n", current_tm_jobs.mip_filename[i]);
+        //        wxPrintf("defocus =%s\n", current_tm_jobs.defocus_filename[i]);
         //    }
         //}
 
@@ -670,6 +676,7 @@ bool MakeTemplateResultDev::DoCalculation( ) {
                 psi_image.QuickAndDirtyReadSlice(current_tm_jobs.psi_filename[img_idx].ToStdString( ), 1);
                 theta_image.QuickAndDirtyReadSlice(current_tm_jobs.theta_filename[img_idx].ToStdString( ), 1);
                 phi_image.QuickAndDirtyReadSlice(current_tm_jobs.phi_filename[img_idx].ToStdString( ), 1);
+                defocus_image.QuickAndDirtyReadSlice(current_tm_jobs.defocus_filename[img_idx].ToStdString( ), 1);
 
                 if ( ignore_N_pixels_from_the_border > 0 && (ignore_N_pixels_from_the_border > mip_image.logical_x_dimension / 2 || ignore_N_pixels_from_the_border > mip_image.logical_y_dimension / 2) ) {
                     wxPrintf("You have entered %d for ignore_N_pixels_from_the_border, which is too large given image half dimesnsions of %d (X) and %d (Y)",
@@ -830,14 +837,15 @@ bool MakeTemplateResultDev::DoCalculation( ) {
                     float current_psi                                              = psi_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0);
                     float current_theta                                            = theta_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0);
                     float current_phi                                              = phi_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0);
+                    float delta_defocus                                            = defocus_image.ReturnRealPixelFromPhysicalCoord(coord_x, coord_y, 0);
                     output_parameters.position_in_stack                            = 1;
                     output_parameters.psi                                          = current_psi;
                     output_parameters.theta                                        = current_theta;
                     output_parameters.phi                                          = current_phi;
                     output_parameters.original_x_position                          = coord_x * result->pixel_size;
                     output_parameters.original_y_position                          = coord_y * result->pixel_size;
-                    output_parameters.defocus_1                                    = current_tm_jobs.defocus_1[img_idx];
-                    output_parameters.defocus_2                                    = current_tm_jobs.defocus_2[img_idx];
+                    output_parameters.defocus_1                                    = current_tm_jobs.defocus_1[img_idx] + delta_defocus;
+                    output_parameters.defocus_2                                    = current_tm_jobs.defocus_2[img_idx] + delta_defocus;
                     output_parameters.defocus_angle                                = current_tm_jobs.defocus_angle[img_idx];
                     output_parameters.score                                        = get<0>(current_peak);
                     output_parameters.microscope_voltage_kv                        = result->voltage;
