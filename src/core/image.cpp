@@ -5221,7 +5221,9 @@ std::tuple<int, int> Image::CropAndAddGaussianNoiseToDarkAreas(float sigma_for_f
     // Put soft edge on mask
 
     mask_image.ForwardFFT( );
-    mask_image.GaussianLowPassFilter(sigma_for_soft_edge);
+    if ( sigma_for_soft_edge > 0.0 ) {
+        mask_image.GaussianLowPassFilter(sigma_for_soft_edge);
+    }
     mask_image.BackwardFFT( );
 
     // Apply mask to image and replace dark part with noise

@@ -887,7 +887,7 @@ bool UnBlurApp::DoCalculation( ) {
     if ( replace_dark_areas_with_gaussian_noise ) {
         sum_image.BackwardFFT( );
         std::string mask_filename = output_filename.substr(0, output_filename.size( ) - 4) + "_mask.mrc";
-        crop_location             = sum_image.CropAndAddGaussianNoiseToDarkAreas(0.01, threshold_for_gaussian_noise, 20, 0.01, measure_mean_and_variance_for_gaussian_noise, variance_for_gaussian_noise, mean_for_gaussian_noise, true, mask_filename);
+        crop_location             = sum_image.CropAndAddGaussianNoiseToDarkAreas(0.01, threshold_for_gaussian_noise, 0, 0, measure_mean_and_variance_for_gaussian_noise, variance_for_gaussian_noise, mean_for_gaussian_noise, true, mask_filename);
         sum_image.ForwardFFT( );
     }
 
