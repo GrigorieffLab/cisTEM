@@ -268,7 +268,7 @@ vector<float> Calculate1QPValue(const vector<float>& ag_x1_,
 }
 
 class
-        MakeTemplateResultDev : public MyApp {
+        CalculateTemplatePvalue : public MyApp {
   public:
     bool DoCalculation( );
     void DoInteractiveUserInput( );
@@ -276,11 +276,11 @@ class
   private:
 };
 
-IMPLEMENT_APP(MakeTemplateResultDev)
+IMPLEMENT_APP(CalculateTemplatePvalue)
 
 // override the DoInteractiveUserInput
 
-void MakeTemplateResultDev::DoInteractiveUserInput( ) {
+void CalculateTemplatePvalue::DoInteractiveUserInput( ) {
 
     wxString input_scaled_mip_filename;
     wxString input_mip_filename;
@@ -291,10 +291,15 @@ void MakeTemplateResultDev::DoInteractiveUserInput( ) {
     wxString input_best_pixel_size_filename;
     wxString xyz_coords_filename;
     wxString output_star_filename;
+    wxString input_reconstruction_filename;
+    wxString output_result_image_filename;
+    wxString output_slab_filename;
+    float    slab_thickness;
+    float    pixel_size;
+    float    binning_factor;
 
-    int   min_peak_radius;
-    float pixel_size;
-    int   ignore_N_pixels_from_the_border = -1;
+    int min_peak_radius;
+    int ignore_N_pixels_from_the_border = -1;
 
     bool     run_batch = false;
     wxString input_database_filename;
@@ -304,7 +309,7 @@ void MakeTemplateResultDev::DoInteractiveUserInput( ) {
     int      local_maxima_metric = 1;
     int      num_threads         = 1;
 
-    UserInput* my_input = new UserInput("MakeTemplateResultDev", 1.00);
+    UserInput* my_input = new UserInput("CalculateTemplatePvalue", 1.00);
     run_batch           = my_input->GetYesNoFromUser("Run multiple images in a template match job?", "Individual image (false) or multiple images (true)", "No");
     if ( run_batch ) {
         input_database_filename = my_input->GetFilenameFromUser("Input database file", "The file for template match project", "tm.db", false);
@@ -313,6 +318,7 @@ void MakeTemplateResultDev::DoInteractiveUserInput( ) {
         num_threads             = my_input->GetIntFromUser("Number of threads", "Max is number of images in TM job", "1", 1);
     }
     else {
+        input_reconstruction_filename  = my_input->GetFilenameFromUser("Input template reconstruction", "The 3D reconstruction from which projections are calculated", "reconstruction.mrc", true);
         input_scaled_mip_filename      = my_input->GetFilenameFromUser("Input scaled MIP file", "The file for saving the maximum intensity projection image", "mip.mrc", false);
         input_mip_filename             = my_input->GetFilenameFromUser("Input MIP file", "The file for saving the maximum intensity projection image", "mip.mrc", false);
         input_best_psi_filename        = my_input->GetFilenameFromUser("Input psi file", "The file containing the best psi image", "psi.mrc", false);
@@ -321,19 +327,23 @@ void MakeTemplateResultDev::DoInteractiveUserInput( ) {
         input_best_defocus_filename    = my_input->GetFilenameFromUser("Input defocus file", "The file with the best defocus image", "defocus.mrc", true);
         input_best_pixel_size_filename = my_input->GetFilenameFromUser("Input pixel size file", "The file with the best pixel size image", "pixel_size.mrc", true);
         xyz_coords_filename            = my_input->GetFilenameFromUser("Output x,y,z coordinate file", "The file for saving the x,y,z coordinates of the found targets", "coordinates.txt", false);
+        output_result_image_filename   = my_input->GetFilenameFromUser("Output 2D projection montage", "The file for saving the found result", "result.mrc", false);
+        output_slab_filename           = my_input->GetFilenameFromUser("Output slab volume montage", "The file for saving the slab with the found targets", "slab.mrc", false);
+        slab_thickness                 = my_input->GetFloatFromUser("Sample thickness (A)", "The thickness of the sample that was searched", "2000.0", 100.0);
         pixel_size                     = my_input->GetFloatFromUser("Pixel size of images (A)", "Pixel size of input images in Angstroms", "1.0", 0.0);
+        binning_factor                 = my_input->GetFloatFromUser("Binning factor for slab", "Factor to reduce size of output slab", "4.0", 0.0);
     }
 
     min_peak_radius                 = my_input->GetIntFromUser("Min Peak Radius (px.)", "Essentially the minimum closeness for peaks", "10", 1);
     ignore_N_pixels_from_the_border = my_input->GetIntFromUser("Ignore N pixels from the edge of the MIP", "Default to 50px", "10", 0);
     sorting_metric                  = my_input->GetIntFromUser("Sorting metric -- z-score(1) SNR(2) p-value(3)", "Thresholding metric for 2DTM output", "1", 1, 3);
-    local_maxima_metric             = my_input->GetIntFromUser("Local maxima metric -- z-score(1) SNR(2) p-value(3)", "Maximum filter metric for 2DTM output", "1", 1, 3);
+    local_maxima_metric             = my_input->GetIntFromUser("Local maxima metric -- z-score(1) SNR(2)", "Maximum filter metric for 2DTM output", "1", 1, 2);
     cutoff                          = my_input->GetFloatFromUser("Sorting cutoff", "cutoff for selected metric", "7.5", 0.0);
 
     delete my_input;
 
     //	my_current_job.Reset(14);
-    my_current_job.ManualSetArguments("btitittttttttfiiiif", run_batch,
+    my_current_job.ManualSetArguments("btitittttttttfiiiiftttff", run_batch,
                                       input_database_filename.ToUTF8( ).data( ),
                                       tm_job_id,
                                       output_star_filename.ToUTF8( ).data( ),
@@ -351,12 +361,17 @@ void MakeTemplateResultDev::DoInteractiveUserInput( ) {
                                       ignore_N_pixels_from_the_border,
                                       sorting_metric,
                                       local_maxima_metric,
-                                      cutoff);
+                                      cutoff,
+                                      input_reconstruction_filename.ToUTF8( ).data( ),
+                                      output_result_image_filename.ToUTF8( ).data( ),
+                                      output_slab_filename.ToUTF8( ).data( ),
+                                      slab_thickness,
+                                      binning_factor);
 }
 
 // override the do calculation method which will be what is actually run..
 
-bool MakeTemplateResultDev::DoCalculation( ) {
+bool CalculateTemplatePvalue::DoCalculation( ) {
 
     wxDateTime start_time                      = wxDateTime::Now( );
     bool       run_batch                       = my_current_job.arguments[0].ReturnBoolArgument( );
@@ -378,7 +393,17 @@ bool MakeTemplateResultDev::DoCalculation( ) {
     int        sorting_metric                  = my_current_job.arguments[16].ReturnIntegerArgument( );
     int        local_maxima_metric             = my_current_job.arguments[17].ReturnIntegerArgument( );
     float      cutoff                          = my_current_job.arguments[18].ReturnFloatArgument( );
+    wxString   input_reconstruction_filename   = my_current_job.arguments[19].ReturnStringArgument( );
+    wxString   output_result_image_filename    = my_current_job.arguments[20].ReturnStringArgument( );
+    wxString   output_slab_filename            = my_current_job.arguments[21].ReturnStringArgument( );
+    float      slab_thickness                  = my_current_job.arguments[22].ReturnFloatArgument( );
+    float      binning_factor                  = my_current_job.arguments[23].ReturnFloatArgument( );
 
+    float     padding = 2.0f;
+    ImageFile input_reconstruction_file;
+    input_reconstruction_file.OpenFile(input_reconstruction_filename.ToStdString( ), false);
+
+    Image output_image;
     Image scaled_mip_image;
     Image mip_image;
     Image psi_image;
@@ -386,6 +411,20 @@ bool MakeTemplateResultDev::DoCalculation( ) {
     Image phi_image;
     Image defocus_image;
     Image pixel_size_image;
+    Image input_reconstruction;
+    Image binned_reconstruction;
+    Image rotated_reconstruction;
+    Image current_projection;
+    Image padded_projection;
+    Image slab;
+    int   mip_x_dimension = 0;
+    int   mip_y_dimension = 0;
+
+    int             slab_thickness_in_pixels;
+    int             binned_dimension_3d;
+    float           binned_pixel_size;
+    float           max_density;
+    AnglesAndShifts angles;
 
     float current_phi;
     float current_theta;
@@ -418,12 +457,59 @@ bool MakeTemplateResultDev::DoCalculation( ) {
         phi_image.QuickAndDirtyReadSlice(input_best_phi_filename.ToStdString( ), 1);
         defocus_image.QuickAndDirtyReadSlice(input_best_defocus_filename.ToStdString( ), 1);
         pixel_size_image.QuickAndDirtyReadSlice(input_best_pixel_size_filename.ToStdString( ), 1);
+        mip_x_dimension = mip_image.logical_x_dimension;
+        mip_y_dimension = mip_image.logical_y_dimension;
 
         if ( ignore_N_pixels_from_the_border > 0 && (ignore_N_pixels_from_the_border > mip_image.logical_x_dimension / 2 || ignore_N_pixels_from_the_border > mip_image.logical_y_dimension / 2) ) {
             wxPrintf("You have entered %d for ignore_N_pixels_from_the_border, which is too large given image half dimesnsions of %d (X) and %d (Y)",
                      ignore_N_pixels_from_the_border, mip_image.logical_x_dimension / 2, mip_image.logical_y_dimension / 2);
             exit(-1);
         }
+
+        output_image.Allocate(mip_x_dimension, mip_y_dimension, 1);
+        output_image.SetToConstant(0.0f);
+
+        input_reconstruction.ReadSlices(&input_reconstruction_file, 1, input_reconstruction_file.ReturnNumberOfSlices( ));
+        binned_reconstruction.CopyFrom(&input_reconstruction);
+        binned_dimension_3d = myroundint(float(input_reconstruction.logical_x_dimension) / binning_factor);
+        if ( IsOdd(binned_dimension_3d) )
+            binned_dimension_3d++;
+        binning_factor           = float(input_reconstruction.logical_x_dimension) / float(binned_dimension_3d);
+        binned_pixel_size        = pixel_size * binning_factor;
+        slab_thickness_in_pixels = myroundint(slab_thickness / binned_pixel_size);
+        wxPrintf("\nSlab dimensions = %i %i %i\n", myroundint(mip_x_dimension / binning_factor), myroundint(mip_y_dimension / binning_factor), slab_thickness_in_pixels);
+
+        slab.Allocate(myroundint(mip_x_dimension / binning_factor), myroundint(mip_y_dimension / binning_factor), slab_thickness_in_pixels);
+        slab.SetToConstant(0.0f);
+
+        if ( binned_dimension_3d != input_reconstruction.logical_x_dimension ) {
+            binned_reconstruction.ForwardFFT( );
+            binned_reconstruction.Resize(binned_dimension_3d, binned_dimension_3d, binned_dimension_3d);
+            binned_reconstruction.BackwardFFT( );
+        }
+        max_density = binned_reconstruction.ReturnAverageOfMaxN( );
+        binned_reconstruction.DivideByConstant(max_density);
+
+        if ( padding != 1.0f ) {
+            input_reconstruction.Resize(input_reconstruction.logical_x_dimension * padding, input_reconstruction.logical_y_dimension * padding, input_reconstruction.logical_z_dimension * padding, input_reconstruction.ReturnAverageOfRealValuesOnEdges( ));
+        }
+        input_reconstruction.ForwardFFT( );
+        input_reconstruction.MultiplyByConstant(sqrtf(input_reconstruction.logical_x_dimension * input_reconstruction.logical_y_dimension * sqrtf(input_reconstruction.logical_z_dimension)));
+        //input_reconstruction.CosineMask(0.1, 0.01, true);
+        //input_reconstruction.Whiten();
+        //if (first_search_position == 0) input_reconstruction.QuickAndDirtyWriteSlices("/tmp/filter.mrc", 1, input_reconstruction.logical_z_dimension);
+        input_reconstruction.ZeroCentralPixel( );
+        input_reconstruction.SwapRealSpaceQuadrants( );
+
+        // assume cube
+
+        current_projection.Allocate(input_reconstruction.logical_x_dimension, input_reconstruction.logical_x_dimension, false);
+        if ( padding != 1.0f )
+            padded_projection.Allocate(input_reconstruction_file.ReturnXSize( ) * padding, input_reconstruction_file.ReturnXSize( ) * padding, false);
+
+        // loop until the found peak is below the threshold
+
+        wxPrintf("\n");
 
         // Find local maxima in z-score map
         if ( local_maxima_metric == 1 ) {
@@ -600,7 +686,40 @@ bool MakeTemplateResultDev::DoCalculation( ) {
 
             // optional coordinate_file length
             coordinate_file.WriteLine(coordinates.data( ));
+
+            // insert this peak into the output image
+            angles.Init(current_phi, current_theta, current_psi, 0.0, 0.0);
+
+            if ( padding != 1.0f ) {
+                input_reconstruction.ExtractSlice(padded_projection, angles, 1.0f, false);
+                padded_projection.SwapRealSpaceQuadrants( );
+                padded_projection.BackwardFFT( );
+                padded_projection.ClipInto(&current_projection);
+                current_projection.ForwardFFT( );
+            }
+            else {
+                input_reconstruction.ExtractSlice(current_projection, angles, 1.0f, false);
+                current_projection.SwapRealSpaceQuadrants( );
+            }
+
+            angles.Init(-current_psi, -current_theta, -current_phi, 0.0, 0.0);
+            rotated_reconstruction.CopyFrom(&binned_reconstruction);
+            rotated_reconstruction.Rotate3DByRotationMatrixAndOrApplySymmetry(angles.euler_matrix);
+
+            current_projection.MultiplyByConstant(sqrtf(current_projection.logical_x_dimension * current_projection.logical_y_dimension));
+            current_projection.BackwardFFT( );
+            current_projection.AddConstant(-current_projection.ReturnAverageOfRealValuesOnEdges( ));
+
+            // insert it into the output image
+
+            output_image.InsertOtherImageAtSpecifiedPosition(&current_projection, coord_x - output_image.physical_address_of_box_center_x, coord_y - output_image.physical_address_of_box_center_y, 0, 0.0f);
+            slab.InsertOtherImageAtSpecifiedPosition(&rotated_reconstruction, myroundint((coord_x - output_image.physical_address_of_box_center_x) / binning_factor), myroundint((coord_y - output_image.physical_address_of_box_center_y) / binning_factor), -myroundint(current_defocus / binned_pixel_size), 0.0f);
         }
+
+        // save the output image
+
+        output_image.QuickAndDirtyWriteSlice(output_result_image_filename.ToStdString( ), 1, true, pixel_size);
+        slab.QuickAndDirtyWriteSlices(output_slab_filename.ToStdString( ), 1, slab_thickness_in_pixels, true, binned_pixel_size);
     }
     else {
         // test database
