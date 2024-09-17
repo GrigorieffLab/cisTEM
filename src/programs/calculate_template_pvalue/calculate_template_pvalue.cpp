@@ -399,10 +399,6 @@ bool CalculateTemplatePvalue::DoCalculation( ) {
     float      slab_thickness                  = my_current_job.arguments[22].ReturnFloatArgument( );
     float      binning_factor                  = my_current_job.arguments[23].ReturnFloatArgument( );
 
-    float     padding = 2.0f;
-    ImageFile input_reconstruction_file;
-    input_reconstruction_file.OpenFile(input_reconstruction_filename.ToStdString( ), false);
-
     Image output_image;
     Image scaled_mip_image;
     Image mip_image;
@@ -449,6 +445,10 @@ bool CalculateTemplatePvalue::DoCalculation( ) {
     vector<float>                         coordinates;
 
     if ( ! run_batch ) {
+        float     padding = 2.0f;
+        ImageFile input_reconstruction_file;
+        input_reconstruction_file.OpenFile(input_reconstruction_filename.ToStdString( ), false);
+
         // Read in images
         mip_image.QuickAndDirtyReadSlice(input_mip_filename.ToStdString( ), 1);
         scaled_mip_image.QuickAndDirtyReadSlice(input_scaled_mip_filename.ToStdString( ), 1);
