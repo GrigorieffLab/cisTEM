@@ -69,7 +69,8 @@ double optim_function(void* pt2Object, double values[]) {
     res.clear( );
     for ( int image_ind = 0; image_ind < image_no; image_ind++ ) {
         ctf_vec = multiplyVecWithMat(z_vec, ctf_rot_mat[image_ind]);
-        tmp_mat = multiplyMatrices(zero_rot, tem_rot_mat[image_ind]);
+        // tmp_mat = multiplyMatrices(zero_rot, tem_rot_mat[image_ind]);
+        tmp_mat = multiplyMatrices(tem_rot_mat[image_ind], zero_rot);
         fit_vec = multiplyVecWithMat(z_vec, tmp_mat);
 
         float sum_num = 0;
@@ -352,7 +353,7 @@ void MatrixToAngleZXZ(const std::vector<std::vector<double>>& R, double* theta, 
         *phi = 90;
     }
     else {
-        *phi = (double)atan(vec_norm[0] / vec_norm[1]) * rtoa;
+        *phi = -(double)atan(vec_norm[0] / vec_norm[1]) * rtoa;
     }
     if ( *phi < 0 ) {
         *phi += 180;
@@ -373,12 +374,12 @@ std::vector<std::vector<double>> CTFRotationMatrix(double phi, double theta) {
     double sinth  = (double)sin(ator * theta);
 
     R[0][0] = cosphi * cosphi + sinphi * sinphi * costh;
-    R[0][1] = -cosphi * sinphi + cosphi * sinphi * costh;
-    R[0][2] = -sinphi * sinth;
-    R[1][0] = -cosphi * sinphi + cosphi * sinphi * costh;
+    R[0][1] = cosphi * sinphi - cosphi * sinphi * costh;
+    R[0][2] = sinphi * sinth;
+    R[1][0] = cosphi * sinphi - cosphi * sinphi * costh;
     R[1][1] = cosphi * cosphi * costh + sinphi * sinphi;
     R[1][2] = -cosphi * sinth;
-    R[2][0] = sinphi * sinth;
+    R[2][0] = -sinphi * sinth;
     R[2][1] = cosphi * sinth;
     R[2][2] = costh;
     return R;
@@ -417,9 +418,9 @@ std::vector<double> multiplyVecWithMat(const std::vector<double>& vec, const std
         throw std::invalid_argument("Matrix and vector dimensions do not match for multiplication.");
     }
     std::vector<double> result(matrix.size( ), 0);
-    for ( size_t i = 0; i < matrix[0].size( ); ++i ) {
+    for ( size_t i = 0; i < matrix.size( ); ++i ) {
         for ( size_t j = 0; j < vec.size( ); ++j ) {
-            result[i] += matrix[j][i] * vec[j];
+            result[i] += matrix[i][j] * vec[j];
         }
     }
     return result;
